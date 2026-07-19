@@ -122,13 +122,15 @@ public class CitizensBackend implements NpcBackend {
         if (skinTexture == null) return;
 
         // 用 MethodHandles 绕过 Paper reflection-rewriter
+        // 注意：Paper 只拦截 Class.getMethod/getDeclaredMethod，不拦截 Lookup.findVirtual/findVirtual
+        Class<?> propertyClass = skinTexture.getClass();
         java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.lookup();
-        java.lang.invoke.MethodHandle getValue = lookup.unreflect(
-                skinTexture.getClass().getDeclaredMethod("getValue"));
-        java.lang.invoke.MethodHandle getSignature = lookup.unreflect(
-                skinTexture.getClass().getDeclaredMethod("getSignature"));
         String value, signature;
         try {
+            java.lang.invoke.MethodHandle getValue = lookup.findVirtual(propertyClass, "getValue",
+                    java.lang.invoke.MethodType.methodType(String.class));
+            java.lang.invoke.MethodHandle getSignature = lookup.findVirtual(propertyClass, "getSignature",
+                    java.lang.invoke.MethodType.methodType(String.class));
             value = (String) getValue.invoke(skinTexture);
             signature = (String) getSignature.invoke(skinTexture);
         } catch (Throwable t) {

@@ -203,10 +203,6 @@ public class AIPlayerManager {
                     });
                 } catch (Exception e) {
                     plugin.getLogger().warning("AI 自主活动失败: " + e.getMessage());
-                    // LLM 失败时执行离线行为（不需要网络）
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        executeOfflineBehavior(aiPlayer);
-                    });
                 }
             });
         } catch (Exception e) {
@@ -215,64 +211,10 @@ public class AIPlayerManager {
     }
 
     /**
-     * 离线行为：LLM 调用失败时执行的本地行为（不需要网络）
-     * <p>
-     * 随机选择：走动、挖附近方块、采集资源、捡起物品、跳跃、挥手等
+     * 获取所有 AI 玩家名称
      */
-    private void executeOfflineBehavior(AIPlayer aiPlayer) {
-        Player v = aiPlayer.getEntity();
-        if (v == null || !v.isValid()) return;
-
-        int roll = (int) (Math.random() * 100);
-        // 40% 概率走动到随机方向
-        if (roll < 40) {
-            String[] dirs = {"north", "south", "east", "west"};
-            String dir = dirs[(int) (Math.random() * dirs.length)];
-            double dist = 3 + Math.random() * 7;
-            plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:walk_dir " + dir + " " + dist + "]");
-        }
-        // 20% 概率挖附近方块
-        else if (roll < 60) {
-            // 找附近可挖方块
-            for (org.bukkit.entity.Entity e : v.getNearbyEntities(5, 5, 5)) {
-                if (e instanceof org.bukkit.entity.Item) {
-                    plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:pickup]");
-                    return;
-                }
-            }
-            // 没有掉落物就挖脚下附近方块
-            Location loc = v.getLocation();
-            int x = loc.getBlockX() + (int) (Math.random() * 5 - 2);
-            int y = (int) loc.getY() - 1;
-            int z = loc.getBlockZ() + (int) (Math.random() * 5 - 2);
-            plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:break " + x + " " + y + " " + z + "]");
-        }
-        // 15% 概率挥手/跳跃
-        else if (roll < 75) {
-            if (Math.random() < 0.5) {
-                plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:wave]");
-            } else {
-                plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:jump]");
-            }
-        }
-        // 10% 概率说话（本地消息）
-        else if (roll < 85) {
-            String[] messages = {
-                    "（环顾四周）",
-                    "（继续探索中...）",
-                    "（挖挖挖）",
-                    "（走走走）",
-                    "（真安静啊）",
-                    "（不知道附近有没有怪物...）"
-            };
-            String msg = messages[(int) (Math.random() * messages.length)];
-            aiPlayer.sayInChat(msg);
-        }
-        // 10% 概率转身看随机方向
-        else {
-            String[] dirs = {"north", "south", "east", "west"};
-            plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:look " + dirs[(int) (Math.random() * dirs.length)] + "]");
-        }
+    public java.util.List<String> getAllNames() {
+        return aiPlayers.values().stream().map(AIPlayer::getName).toList();
     }
 
     /**
@@ -364,10 +306,6 @@ public class AIPlayerManager {
                     });
                 } catch (Exception e) {
                     plugin.getLogger().warning("环境反应 LLM 失败: " + e.getMessage());
-                    // 紧急事件时 LLM 失败，执行离线行为（逃跑/反击）
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        executeOfflineBehavior(aiPlayer);
-                    });
                 }
             });
         } catch (Exception e) {

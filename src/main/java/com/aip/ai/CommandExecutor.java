@@ -13,6 +13,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
@@ -132,6 +133,27 @@ public class CommandExecutor {
             case "weather" -> handleWeather(entity, args);
             case "time" -> handleTime(entity, args);
             case "broadcast" -> handleBroadcast(aiPlayer, args);
+            case "kill" -> handleKill(entity);
+            case "heal" -> handleHeal(entity, args);
+            case "feed" -> handleFeed(entity, args);
+            case "gamemode" -> handleGamemode(entity, args);
+            case "fly" -> handleFly(entity, args);
+            case "ignite" -> handleIgnite(entity, args);
+            case "extinguish" -> handleExtinguish(entity);
+            case "strike" -> handleStrike(entity, args);
+            case "explode" -> handleExplode(entity, args);
+            case "spawnmob" -> handleSpawnMob(entity, args);
+            case "xp" -> handleXp(entity, args);
+            case "clearinv" -> handleClearInv(entity);
+            case "rename" -> handleRename(aiPlayer, args);
+            case "ride" -> handleRide(entity, args);
+            case "carry" -> handleCarry(entity, args);
+            case "duplicate" -> handleDuplicate(entity);
+            case "openinv" -> handleOpenInv(entity, args);
+            case "home" -> handleHome(entity);
+            case "top" -> handleTop(entity);
+            case "combo" -> handleCombo(entity, args);
+            case "emote" -> handleEmote(entity, args);
             default -> plugin.getLogger().warning("未知 AI 命令: " + cmd);
         }
     }
@@ -702,5 +724,202 @@ public class CommandExecutor {
             return;
         }
         plugin.getNpcAnimator().approachPlayer(entity, target);
+    }
+
+    // ===== 新增 20 个功能命令 =====
+
+    /** kill —— 自杀（测试用） */
+    private void handleKill(Player entity) {
+        entity.setHealth(0);
+    }
+
+    /** heal [数值] —— 恢复血量，默认 20 */
+    private void handleHeal(Player entity, String[] args) {
+        double amount = args.length >= 1 ? safeParseDouble(args[0], 20) : 20;
+        entity.setHealth(Math.min(20, entity.getHealth() + amount));
+    }
+
+    /** feed [数值] —— 恢复饱食度，默认 20 */
+    private void handleFeed(Player entity, String[] args) {
+        int amount = args.length >= 1 ? safeParse(args[0], 20) : 20;
+        entity.setFoodLevel(Math.min(20, entity.getFoodLevel() + amount));
+    }
+
+    /** gamemode <survival|creative|adventure|spectator> */
+    private void handleGamemode(Player entity, String[] args) {
+        if (args.length < 1) return;
+        try {
+            org.bukkit.GameMode gm = org.bukkit.GameMode.valueOf(args[0].toUpperCase());
+            entity.setGameMode(gm);
+        } catch (IllegalArgumentException ignored) {
+        }
+    }
+
+    /** fly <true|false> —— 开关飞行 */
+    private void handleFly(Player entity, String[] args) {
+        boolean fly = args.length < 1 || Boolean.parseBoolean(args[0]);
+        entity.setAllowFlight(fly);
+        entity.setFlying(fly);
+    }
+
+    /** ignite [秒数] —— 着火 */
+    private void handleIgnite(Player entity, String[] args) {
+        int seconds = args.length >= 1 ? safeParse(args[0], 5) : 5;
+        entity.setFireTicks(seconds * 20);
+    }
+
+    /** extinguish —— 灭火 */
+    private void handleExtinguish(Player entity) {
+        entity.setFireTicks(0);
+    }
+
+    /** strike [玩家名|self] —— 雷击 */
+    private void handleStrike(Player entity, String[] args) {
+        Player target = entity;
+        if (args.length >= 1 && !args[0].equalsIgnoreCase("self")) {
+            target = Bukkit.getPlayerExact(args[0]);
+        }
+        if (target != null) {
+            target.getWorld().strikeLightning(target.getLocation());
+        }
+    }
+
+    /** explode [威力] —— 在 AI 位置产生爆炸 */
+    private void handleExplode(Player entity, String[] args) {
+        float power = args.length >= 1 ? (float) safeParseDouble(args[0], 2.0) : 2.0f;
+        entity.getWorld().createExplosion(entity.getLocation(), power, false, true);
+    }
+
+    /** spawnmob <生物类型> [数量] */
+    private void handleSpawnMob(Player entity, String[] args) {
+        if (args.length < 1) return;
+        org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(args[0].toUpperCase());
+        if (type == null || !type.isAlive() || !type.isSpawnable()) return;
+        int count = args.length >= 2 ? Math.min(10, safeParse(args[1], 1)) : 1;
+        Location loc = entity.getLocation();
+        for (int i = 0; i < count; i++) {
+            entity.getWorld().spawnEntity(loc, type);
+        }
+    }
+
+    /** xp <数值> —— 给经验 */
+    private void handleXp(Player entity, String[] args) {
+        int amount = args.length >= 1 ? safeParse(args[0], 10) : 10;
+        entity.giveExp(amount);
+    }
+
+    /** clearinv —— 清空背包 */
+    private void handleClearInv(Player entity) {
+        entity.getInventory().clear();
+    }
+
+    /** rename <新名字> —— 重命名 AI */
+    private void handleRename(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 1) return;
+        String newName = String.join(" ", args);
+        Player entity = aiPlayer.getEntity();
+        if (entity != null) {
+            entity.setCustomName("§e" + newName);
+            entity.setCustomNameVisible(true);
+        }
+    }
+
+    /** ride <玩家名> —— 骑乘玩家 */
+    private void handleRide(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target != null && !target.equals(entity)) {
+            target.addPassenger(entity);
+        }
+    }
+
+    /** carry <玩家名> —— 让目标骑乘 AI */
+    private void handleCarry(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target != null && !target.equals(entity)) {
+            entity.addPassenger(target);
+        }
+    }
+
+    /** duplicate —— 复制主手物品 */
+    private void handleDuplicate(Player entity) {
+        ItemStack hand = entity.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) return;
+        entity.getInventory().addItem(hand.clone());
+    }
+
+    /** openinv <玩家名> —— 打开目标玩家背包 */
+    private void handleOpenInv(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target != null && !target.equals(entity)) {
+            entity.openInventory(target.getInventory());
+        }
+    }
+
+    /** home —— 传送到出生点 */
+    private void handleHome(Player entity) {
+        Location bed = entity.getRespawnLocation();
+        if (bed != null) {
+            entity.teleport(bed);
+        } else {
+            entity.teleport(entity.getWorld().getSpawnLocation());
+        }
+    }
+
+    /** top —— 传送到头顶最高处 */
+    private void handleTop(Player entity) {
+        Location loc = entity.getLocation();
+        int y = entity.getWorld().getHighestBlockYAt(loc);
+        loc.setY(y + 1);
+        entity.teleport(loc);
+    }
+
+    /** combo <玩家名> [次数] —— 连续攻击 */
+    private void handleCombo(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null || target.equals(entity)) return;
+        int times = args.length >= 2 ? Math.min(10, safeParse(args[1], 3)) : 3;
+        double damage = plugin.getConfigManager().getAttackDamage();
+        new BukkitRunnable() {
+            int count = 0;
+            @Override
+            public void run() {
+                if (count >= times || !entity.isValid() || !target.isValid() || target.isDead()) {
+                    cancel();
+                    return;
+                }
+                target.damage(damage, entity);
+                count++;
+            }
+        }.runTaskTimer(plugin, 0L, 8L);
+    }
+
+    /** emote <表情> —— 表情动作 */
+    private void handleEmote(Player entity, String[] args) {
+        if (args.length < 1) return;
+        String emote = args[0].toLowerCase();
+        switch (emote) {
+            case "bow" -> entity.swingMainHand();
+            case "clap" -> {
+                plugin.getNpcAnimator().swingArm(entity);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> plugin.getNpcAnimator().swingArm(entity), 5L);
+                Bukkit.getScheduler().runTaskLater(plugin, () -> plugin.getNpcAnimator().swingArm(entity), 10L);
+            }
+            case "laugh" -> entity.sendMessage("§e哈哈哈哈哈！");
+            case "cry" -> entity.sendMessage("§7呜呜呜...");
+            case "angry" -> entity.sendMessage("§c哼！");
+            default -> plugin.getNpcAnimator().wave(entity);
+        }
+    }
+
+    private double safeParseDouble(String s, double def) {
+        try {
+            return Double.parseDouble(s);
+        } catch (Exception e) {
+            return def;
+        }
     }
 }
