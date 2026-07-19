@@ -5,7 +5,11 @@ import com.aip.ai.CommandExecutor;
 import com.aip.ai.GameDataCollector;
 import com.aip.ai.LLMClient;
 import com.aip.ai.NpcAnimator;
+import com.aip.ai.RelationManager;
+import com.aip.ai.TaskManager;
+import com.aip.ai.TeamManager;
 import com.aip.commands.AIPCommand;
+import com.aip.commands.GuiCommand;
 import com.aip.config.ConfigManager;
 import com.aip.gui.GuiManager;
 import com.aip.listeners.ChatListener;
@@ -28,6 +32,11 @@ public class AIPlayerPlugin extends JavaPlugin {
     private CommandExecutor commandExecutor;
     private NpcAnimator npcAnimator;
     private GuiManager guiManager;
+
+    // ===== 新增管理器（功能 4/5/6） =====
+    private TeamManager teamManager;
+    private TaskManager taskManager;
+    private RelationManager relationManager;
 
     @Override
     public void onEnable() {
@@ -58,6 +67,11 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.aiPlayerManager = new AIPlayerManager(this);
         this.guiManager = new GuiManager(this);
 
+        // 初始化新增管理器
+        this.teamManager = new TeamManager();
+        this.relationManager = new RelationManager();
+        this.taskManager = new TaskManager(this);
+
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
         if (getCommand("aip") != null) {
@@ -67,11 +81,21 @@ public class AIPlayerPlugin extends JavaPlugin {
             getLogger().severe("无法注册 /aip 命令，plugin.yml 配置错误！");
         }
 
+        if (getCommand("k") != null) {
+            getCommand("k").setExecutor(new GuiCommand(this));
+        } else {
+            getLogger().severe("无法注册 /k 命令，plugin.yml 配置错误！");
+        }
+
         // 5. 注册事件监听器
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDamageListener(this), this);
-        getServer().getPluginManager().registerEvents(new GuiListener(this), this);
+        if (guiManager != null) {
+            getServer().getPluginManager().registerEvents(new GuiListener(this), this);
+        } else {
+            getLogger().severe("guiManager 未初始化，跳过 GUI 监听器注册！");
+        }
 
         // 6. 启动自动活动任务
         if (configManager.isAutonomous()) {
@@ -79,6 +103,8 @@ public class AIPlayerPlugin extends JavaPlugin {
         }
         // 始终启动环境感知任务（让 NPC 对附近威胁/玩家立刻反应）
         aiPlayerManager.startEnvironmentTask();
+        // 启动长期任务调度器（功能 5）
+        taskManager.start();
 
         // 7. 服务器完全启动后重新检查 NPC 后端（防止 Citizens 比 AIPlayer 后 enable）
         getServer().getScheduler().runTaskLater(this, () -> {
@@ -91,6 +117,9 @@ public class AIPlayerPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (taskManager != null) {
+            taskManager.stop();
+        }
         if (aiPlayerManager != null) {
             aiPlayerManager.removeAll();
         }
@@ -138,5 +167,20 @@ public class AIPlayerPlugin extends JavaPlugin {
 
     public GuiManager getGuiManager() {
         return guiManager;
+    }
+
+    /** 队伍管理器（功能 4） */
+    public TeamManager getTeamManager() {
+        return teamManager;
+    }
+
+    /** 长期任务管理器（功能 5） */
+    public TaskManager getTaskManager() {
+        return taskManager;
+    }
+
+    /** 关系图谱管理器（功能 6） */
+    public RelationManager getRelationManager() {
+        return relationManager;
     }
 }

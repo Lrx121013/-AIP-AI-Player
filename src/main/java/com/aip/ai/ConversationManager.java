@@ -38,8 +38,16 @@ public class ConversationManager {
         List<Map<String, String>> messages = new ArrayList<>();
 
         // 系统提示词（首次激活时包含游戏数据/初始状态）
-        String systemPrompt = cfg.renderSystemPrompt(aiPlayer.getName());
-        messages.add(makeMessage("system", systemPrompt));
+        // 追加个性（功能 3）和情绪（功能 9）
+        StringBuilder systemPromptBuilder = new StringBuilder(cfg.renderSystemPrompt(aiPlayer.getName()));
+        systemPromptBuilder.append("\n").append(aiPlayer.getPersonality().getPrompt());
+        int mood = aiPlayer.getMood();
+        if (mood < 30) {
+            systemPromptBuilder.append("\n你现在心情沮丧");
+        } else if (mood > 70) {
+            systemPromptBuilder.append("\n你现在心情愉悦");
+        }
+        messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
         // 历史对话
         for (Map<String, String> h : aiPlayer.getConversationHistory()) {

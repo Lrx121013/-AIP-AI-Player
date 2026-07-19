@@ -81,6 +81,9 @@ public class NpcDamageListener implements Listener {
         }
         if (attacker == null) return;
 
+        // 功能 9：被攻击时情绪下降
+        ai.adjustMood(-10);
+
         // 1. 立即喊话（被攻击）
         shout(victimId, ai.getName(), HURT_LINES);
 

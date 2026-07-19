@@ -68,11 +68,18 @@ public class CommandExecutor {
             aiPlayer.sayInChat(spokenText);
         }
 
+        // 埋点：对话计数（功能 1）—— 每轮 LLM 回复计为一次对话
+        aiPlayer.getStats().incChat();
+
         // 2. 顺序执行命令
         for (String cmd : commands) {
             try {
                 executeCommand(aiPlayer, cmd);
+                // 埋点：命令成功（功能 1）
+                aiPlayer.getStats().incCommand(true);
             } catch (Exception e) {
+                // 埋点：命令失败（功能 1）
+                aiPlayer.getStats().incCommand(false);
                 plugin.getLogger().warning("执行命令失败 [" + cmd + "]: " + e.getMessage());
             }
         }
@@ -92,13 +99,13 @@ public class CommandExecutor {
         }
 
         switch (cmd) {
-            case "walk" -> handleWalk(entity, args);
-            case "walk_dir" -> handleWalkDir(entity, args);
+            case "walk" -> handleWalk(aiPlayer, args);
+            case "walk_dir" -> handleWalkDir(aiPlayer, args);
             case "follow" -> handleFollow(aiPlayer, args);
             case "stop" -> handleStop(aiPlayer);
             case "break" -> handleBreak(entity, args);
             case "place" -> handlePlace(entity, args);
-            case "attack" -> handleAttack(entity, args);
+            case "attack" -> handleAttack(aiPlayer, args);
             case "jump" -> handleJump(entity);
             case "look" -> handleLook(entity, args);
             case "say" -> handleSay(aiPlayer, args);
@@ -430,20 +437,24 @@ public class CommandExecutor {
         }
     }
 
-    private void handleWalk(Player entity, String[] args) {
+    private void handleWalk(AIPlayer aiPlayer, String[] args) {
         if (args.length < 3) return;
+        Player entity = aiPlayer.getEntity();
+        if (entity == null) return;
         try {
             double x = Double.parseDouble(args[0]);
             double y = Double.parseDouble(args[1]);
             double z = Double.parseDouble(args[2]);
             Location target = new Location(entity.getWorld(), x, y, z);
-            walkTo(entity, target);
+            walkTo(aiPlayer, target);
         } catch (NumberFormatException ignored) {
         }
     }
 
-    private void handleWalkDir(Player entity, String[] args) {
+    private void handleWalkDir(AIPlayer aiPlayer, String[] args) {
         if (args.length < 2) return;
+        Player entity = aiPlayer.getEntity();
+        if (entity == null) return;
         String dir = args[0].toLowerCase();
         double dist;
         try {
@@ -465,16 +476,13 @@ public class CommandExecutor {
             }
         }
         Location target = loc.clone().add(v.multiply(dist));
-        walkTo(entity, target);
+        walkTo(aiPlayer, target);
     }
 
-    private void walkTo(Player entity, Location target) {
-        // 优先使用后端寻路（Citizens 的 A* 寻路会绕过障碍）
-        double speed = plugin.getConfigManager().getMoveSpeed();
-        boolean navigated = NpcHelper.navigateTo(entity, target, speed);
-        if (navigated) return;
+    private void walkTo(AIPlayer aiPlayer, Location target) {
+        Player entity = aiPlayer.getEntity();
+        if (entity == null || !entity.isValid()) return;
 
-        // 回退方案：分帧 teleport 模拟"行走"（NMS 后端）
         Location start = entity.getLocation();
         double totalDist;
         try {
@@ -482,6 +490,16 @@ public class CommandExecutor {
         } catch (Exception e) {
             return;
         }
+
+        // 埋点：统计行走距离（功能 1）
+        aiPlayer.getStats().addWalk(totalDist);
+
+        // 优先使用后端寻路（Citizens 的 A* 寻路会绕过障碍）
+        double speed = plugin.getConfigManager().getMoveSpeed();
+        boolean navigated = NpcHelper.navigateTo(entity, target, speed);
+        if (navigated) return;
+
+        // 回退方案：分帧 teleport 模拟"行走"（NMS 后端）
         if (totalDist < 0.5) return;
         int steps = Math.max(1, (int) Math.min(60, Math.ceil(totalDist / speed)));
         Vector step = target.toVector().subtract(start.toVector()).multiply(1.0 / steps);
@@ -545,8 +563,10 @@ public class CommandExecutor {
         }
     }
 
-    private void handleAttack(Player entity, String[] args) {
+    private void handleAttack(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
+        Player entity = aiPlayer.getEntity();
+        if (entity == null) return;
         String targetName = String.join(" ", args);
         LivingEntity target = null;
         if (targetName.equalsIgnoreCase("nearest")) {
@@ -580,8 +600,31 @@ public class CommandExecutor {
             plugin.getLogger().info("未找到攻击目标: " + targetName);
             return;
         }
+
+        // 检查：如果目标也是 AI 玩家，应用队伍 / 关系约束（功能 4 / 功能 6）
+        AIPlayer targetAi = plugin.getAiPlayerManager().getByEntity(target.getUniqueId());
+        if (targetAi != null) {
+            String attackerName = aiPlayer.getName();
+            String targetAiName = targetAi.getName();
+            // 同队不攻击（功能 4）
+            if (plugin.getTeamManager().sameTeam(attackerName, targetAiName)) {
+                plugin.getLogger().info(attackerName + " 与 " + targetAiName + " 同队，不攻击");
+                return;
+            }
+            // 关系值 > -50 不攻击（功能 6）
+            if (plugin.getRelationManager().get(attackerName, targetAiName) > -50) {
+                plugin.getLogger().info(attackerName + " 对 " + targetAiName + " 关系值 > -50，不攻击");
+                return;
+            }
+        }
+
         double damage = plugin.getConfigManager().getAttackDamage();
         target.damage(damage, entity);
+
+        // 埋点：每次攻击都计为击杀（功能 1，简化口径）
+        aiPlayer.getStats().incKill();
+        // 情绪：攻击命中后心情提升（功能 9）
+        aiPlayer.adjustMood(5);
     }
 
     private void handleJump(Player entity) {
@@ -612,6 +655,10 @@ public class CommandExecutor {
         if (args.length < 1) return;
         String msg = String.join(" ", args);
         aiPlayer.sayInChat(msg);
+        // 埋点：对话计数（功能 1）
+        aiPlayer.getStats().incChat();
+        // 情绪：说话后心情略微提升（功能 9）
+        aiPlayer.adjustMood(2);
     }
 
     private void handleCmd(AIPlayer aiPlayer, String[] args) {

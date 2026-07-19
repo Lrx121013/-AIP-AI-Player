@@ -18,9 +18,22 @@ commands:
       /aip talk <name> <message> - Talk to an AI player
       /aip skin <name> skinurl:<URL> - Set skin by URL
       /aip skin <name> playerskin:<player> - Copy player skin
+      /aip history <name> [page] - View conversation history
+      /aip personality set <name> <brave|timid|grumpy|gentle> - Set personality
+      /aip team <create|join|leave|disband|list> - Team management
+      /aip task <assign|cancel|status> - Long-term task
+      /aip relation <set|show|list> - AI relations
+      /aip revive <name> - Revive dead AI
+      /aip schedule <add|list|clear> - AI schedule
+      /aip mood <name> - View mood
+      /aip deathlog <name> - View death log
     aliases:
       - aiplayer
       - ai
+  k:
+    description: Open AIPlayer GUI
+    usage: /k
+    permission: aip.gui
 permissions:
   aip.admin:
     description: Allows admin operations (spawn/remove/reload)
@@ -28,3 +41,6 @@ permissions:
   aip.use:
     description: Allows basic usage
     default: true
+  aip.gui:
+    description: Allows opening AIPlayer GUI
+    default: op

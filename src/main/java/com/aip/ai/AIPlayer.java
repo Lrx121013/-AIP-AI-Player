@@ -22,7 +22,7 @@ public class AIPlayer {
 
     private final AIPlayerPlugin plugin;
     private final String name;
-    private final UUID entityId;
+    private UUID entityId;
     private final List<Map<String, String>> conversationHistory;
     private final List<String> pendingActions;
     private boolean activated;
@@ -30,6 +30,20 @@ public class AIPlayer {
     private double health;
     private int foodLevel;
     private String following; // 正在跟随的玩家名
+
+    // ===== 新增字段（功能 1/3/7/8/9/10） =====
+    /** 统计数据（功能 1） */
+    private final AIStats stats = new AIStats();
+    /** 个性（功能 3） */
+    private Personality personality = Personality.GENTLE;
+    /** 情绪值 0-100，默认 50（功能 9） */
+    private int mood = 50;
+    /** 死亡位置，用于复活（功能 7） */
+    private Location deathLocation;
+    /** 日程列表（功能 8） */
+    private final List<Schedule> schedules = new ArrayList<>();
+    /** 死亡日志（功能 10） */
+    private final List<DeathRecord> deathLog = new ArrayList<>();
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -44,7 +58,39 @@ public class AIPlayer {
 
     public String getName() { return name; }
     public UUID getEntityId() { return entityId; }
+    /** 复活时更新实体 UUID（功能 7） */
+    public void setEntityId(UUID entityId) { this.entityId = entityId; }
     public List<Map<String, String>> getConversationHistory() { return conversationHistory; }
+
+    // ===== 新增 getter / setter =====
+
+    /** 统计数据（功能 1） */
+    public AIStats getStats() { return stats; }
+
+    /** 个性（功能 3） */
+    public Personality getPersonality() { return personality; }
+    public void setPersonality(Personality personality) {
+        if (personality != null) this.personality = personality;
+    }
+
+    /** 情绪（功能 9）：0-100，自动 clamp */
+    public int getMood() { return mood; }
+    public void setMood(int mood) {
+        this.mood = Math.max(0, Math.min(100, mood));
+    }
+    public void adjustMood(int delta) {
+        setMood(this.mood + delta);
+    }
+
+    /** 死亡位置 / 复活用（功能 7） */
+    public Location getDeathLocation() { return deathLocation; }
+    public void setDeathLocation(Location deathLocation) { this.deathLocation = deathLocation; }
+
+    /** 日程列表（功能 8） */
+    public List<Schedule> getSchedules() { return schedules; }
+
+    /** 死亡日志（功能 10） */
+    public List<DeathRecord> getDeathLog() { return deathLog; }
 
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);

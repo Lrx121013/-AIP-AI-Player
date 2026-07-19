@@ -4,6 +4,7 @@ import com.aip.AIPlayerPlugin;
 import com.aip.ai.AIPlayer;
 import com.aip.ai.NpcHelper;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -21,12 +22,13 @@ import java.util.UUID;
 /**
  * GUI 管理器：管理所有 AIPlayer GUI 界面
  * <p>
- * 快捷键 K 打开主界面。
+ * 输入 /k 打开主界面。
  */
 public class GuiManager {
 
     private final AIPlayerPlugin plugin;
     private final Map<UUID, GuiType> openGui = new HashMap<>();
+    private final Map<UUID, AIPlayer> selectedAi = new HashMap<>();
 
     public GuiManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -40,17 +42,22 @@ public class GuiManager {
 
     /** 打开主界面（AI 玩家列表） */
     public void openPlayerList(Player player) {
-        Inventory inv = Bukkit.createInventory(player, 54, "§6AI 玩家列表");
+        Inventory inv = Bukkit.createInventory(new AIPlayerGuiHolder(), 54, "§6AI 玩家列表");
 
         int slot = 0;
         for (AIPlayer ai : plugin.getAiPlayerManager().getAll()) {
             if (slot >= 45) break;
             Player entity = ai.getEntity();
-            String status = entity != null && entity.isValid() ? "§a在线" : "§c离线";
-            String health = entity != null ? String.format("%.0f", entity.getHealth()) : "?";
-
-            ItemStack item = new ItemStack(entity != null && !entity.isInvisible()
-                    ? Material.PLAYER_HEAD : Material.SKELETON_SKULL);
+            String health = "?";
+            String status = "§c离线";
+            if (entity != null && entity.isValid()) {
+                try {
+                    health = String.format("%.0f", entity.getHealth());
+                    status = "§a在线";
+                } catch (Exception ignored) {
+                }
+            }
+            ItemStack item = new ItemStack(Material.PLAYER_HEAD);
             ItemMeta meta = item.getItemMeta();
             meta.setDisplayName("§e" + ai.getName());
             meta.setLore(Arrays.asList(
@@ -66,13 +73,7 @@ public class GuiManager {
         }
 
         // 填充空位
-        for (; slot < 45; slot++) {
-            ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-            ItemMeta fm = filler.getItemMeta();
-            fm.setDisplayName("§7");
-            filler.setItemMeta(fm);
-            inv.setItem(slot, filler);
-        }
+        fillEmpty(inv, slot, 45);
 
         // 底部功能按钮
         ItemStack addBtn = createButton(Material.EMERALD_BLOCK, "§a生成 AI 玩家",
@@ -82,6 +83,11 @@ public class GuiManager {
         ItemStack reloadBtn = createButton(Material.COMMAND_BLOCK, "§6重新加载配置",
                 Arrays.asList("§7重新加载 config.yml"));
         inv.setItem(46, reloadBtn);
+
+        // 队伍按钮（功能 4）
+        ItemStack teamBtn = createButton(Material.SHIELD, "§b队伍列表",
+                Arrays.asList("§7点击在聊天框查看所有队伍"));
+        inv.setItem(47, teamBtn);
 
         ItemStack closeBtn = createButton(Material.BARRIER, "§c关闭",
                 Arrays.asList("§7按 ESC 关闭"));
@@ -93,7 +99,7 @@ public class GuiManager {
 
     /** 打开动作菜单 */
     public void openActionMenu(Player player, AIPlayer aiPlayer) {
-        Inventory inv = Bukkit.createInventory(player, 45, "§6" + aiPlayer.getName() + " - 动作菜单");
+        Inventory inv = Bukkit.createInventory(new AIPlayerGuiHolder(), 45, "§6" + aiPlayer.getName() + " - 动作菜单");
 
         int slot = 0;
         // 移动类
@@ -127,25 +133,24 @@ public class GuiManager {
         // 换皮肤
         inv.setItem(slot++, createButton(Material.PLAYER_HEAD, "§6换皮肤", Arrays.asList("点击打开皮肤菜单")));
 
+        // 统计（功能 1）
+        inv.setItem(slot++, createButton(Material.BOOK, "§b统计信息",
+                Arrays.asList("§7点击在聊天框查看 AI 统计")));
+
         // 移除
         inv.setItem(slot++, createButton(Material.LAVA_BUCKET, "§4移除 AI 玩家", Arrays.asList("危险！将永久删除")));
 
         // 填充
-        for (; slot < 45; slot++) {
-            ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-            ItemMeta fm = filler.getItemMeta();
-            fm.setDisplayName("§7");
-            filler.setItemMeta(fm);
-            inv.setItem(slot, filler);
-        }
+        fillEmpty(inv, slot, 45);
 
         player.openInventory(inv);
         openGui.put(player.getUniqueId(), GuiType.ACTION_MENU);
+        selectedAi.put(player.getUniqueId(), aiPlayer);
     }
 
     /** 打开皮肤菜单 */
     public void openSkinMenu(Player player, AIPlayer aiPlayer) {
-        Inventory inv = Bukkit.createInventory(player, 27, "§6" + aiPlayer.getName() + " - 换皮肤");
+        Inventory inv = Bukkit.createInventory(new AIPlayerGuiHolder(), 27, "§6" + aiPlayer.getName() + " - 换皮肤");
 
         int slot = 0;
         // 复制在线玩家皮肤
@@ -160,13 +165,7 @@ public class GuiManager {
         }
 
         // 填充空位
-        for (; slot < 18; slot++) {
-            ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-            ItemMeta fm = filler.getItemMeta();
-            fm.setDisplayName("§7");
-            filler.setItemMeta(fm);
-            inv.setItem(slot, filler);
-        }
+        fillEmpty(inv, slot, 18);
 
         // 底部按钮
         ItemStack urlBtn = createButton(Material.PAPER, "§6通过 URL 设置",
@@ -179,6 +178,7 @@ public class GuiManager {
 
         player.openInventory(inv);
         openGui.put(player.getUniqueId(), GuiType.SKIN_MENU);
+        selectedAi.put(player.getUniqueId(), aiPlayer);
     }
 
     /** 处理 GUI 点击事件 */
@@ -203,18 +203,26 @@ public class GuiManager {
     }
 
     private void handlePlayerListClick(Player player, ItemStack clicked, InventoryClickEvent event) {
-        String name = clicked.getItemMeta().getDisplayName().replace("§e", "").replace("§6", "").trim();
+        String name = ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).trim();
 
         if (clicked.getType() == Material.EMERALD_BLOCK) {
+            String aiName = "AI" + System.currentTimeMillis();
             player.closeInventory();
-            plugin.getAiPlayerManager().spawn("AI" + System.currentTimeMillis(), player);
-            player.sendMessage("§a已生成 AI 玩家: AI" + System.currentTimeMillis());
+            plugin.getAiPlayerManager().spawn(aiName, player);
+            player.sendMessage("§a已生成 AI 玩家: " + aiName);
             return;
         }
 
         if (clicked.getType() == Material.COMMAND_BLOCK) {
             plugin.reloadAll();
             player.sendMessage("§a配置已重新加载");
+            return;
+        }
+
+        // 功能 4：队伍列表按钮
+        if (clicked.getType() == Material.SHIELD) {
+            player.closeInventory();
+            showTeamList(player);
             return;
         }
 
@@ -235,17 +243,48 @@ public class GuiManager {
         }
     }
 
-    private void handleActionMenuClick(Player player, ItemStack clicked) {
-        String name = clicked.getItemMeta().getDisplayName().replace("§e", "").replace("§c", "")
-                .replace("§6", "").replace("§a", "").replace("§4", "").trim();
-
-        // 获取当前选中的 AI 玩家（从 inventory 标题提取）
-        String aiName = player.getOpenInventory().getTitle().replace("§6", "").replace(" - 动作菜单", "").trim();
-        AIPlayer ai = plugin.getAiPlayerManager().get(aiName);
-        if (ai == null) {
-            player.sendMessage("§cAI 玩家不存在");
+    /** 功能 4：在聊天框展示所有队伍 */
+    private void showTeamList(Player player) {
+        var teams = plugin.getTeamManager().getTeams();
+        if (teams.isEmpty()) {
+            player.sendMessage("§7当前没有任何队伍。");
             return;
         }
+        player.sendMessage("§6===== AI 队伍列表 =====");
+        for (String teamName : teams) {
+            var members = plugin.getTeamManager().getMembers(teamName);
+            player.sendMessage("§e- " + teamName + " §7(" + members.size() + " 人): §f"
+                    + String.join(", ", members));
+        }
+    }
+
+    /** 功能 1：在聊天框展示 AI 统计 */
+    private void showStats(Player player, AIPlayer ai) {
+        var s = ai.getStats();
+        long onlineSec = s.getOnlineTimeMs() / 1000;
+        long onlineMin = onlineSec / 60;
+        long onlineHour = onlineMin / 60;
+        String onlineStr = String.format("%dh %dm %ds", onlineHour, onlineMin % 60, onlineSec % 60);
+        player.sendMessage("§6===== " + ai.getName() + " 的统计 =====");
+        player.sendMessage("§e对话次数: §f" + s.getChatCount());
+        player.sendMessage("§e行走距离: §f" + s.getWalkDistance() + " 格");
+        player.sendMessage("§e击杀次数: §f" + s.getKillCount());
+        player.sendMessage("§e在线时长: §f" + onlineStr);
+        player.sendMessage("§e命令总数: §f" + s.getCommandCount()
+                + " §7(成功 " + s.getCommandSuccess() + ")");
+    }
+
+    private void handleActionMenuClick(Player player, ItemStack clicked) {
+        String name = ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).trim();
+
+        // 获取当前选中的 AI 玩家（从 selectedAi 映射获取）
+        AIPlayer ai = selectedAi.get(player.getUniqueId());
+        if (ai == null) {
+            player.sendMessage("§cAI 玩家不存在");
+            player.closeInventory();
+            return;
+        }
+        String aiName = ai.getName();
 
         switch (name) {
             case "走到我身边" -> executeCommand(ai, "[COMMAND:approach " + player.getName() + "]");
@@ -271,20 +310,29 @@ public class GuiManager {
                 }
             }
             case "换皮肤" -> openSkinMenu(player, ai);
+            case "统计信息" -> {
+                // 功能 1：在聊天框显示统计
+                player.closeInventory();
+                showStats(player, ai);
+            }
             case "移除 AI 玩家" -> {
                 plugin.getAiPlayerManager().remove(aiName);
                 player.sendMessage("§c已移除: " + aiName);
+                selectedAi.remove(player.getUniqueId());
                 openPlayerList(player);
             }
         }
     }
 
     private void handleSkinMenuClick(Player player, ItemStack clicked) {
-        String name = clicked.getItemMeta().getDisplayName().replace("§e", "").replace("§6", "").replace("§a", "").trim();
+        String name = ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).trim();
 
-        String aiName = player.getOpenInventory().getTitle().replace("§6", "").replace(" - 换皮肤", "").trim();
-        AIPlayer ai = plugin.getAiPlayerManager().get(aiName);
-        if (ai == null) return;
+        AIPlayer ai = selectedAi.get(player.getUniqueId());
+        if (ai == null) {
+            player.closeInventory();
+            return;
+        }
+        String aiName = ai.getName();
 
         if (name.equals("通过 URL 设置")) {
             player.closeInventory();
@@ -310,12 +358,17 @@ public class GuiManager {
                 }
             } catch (Exception e) {
                 player.sendMessage("§c换皮肤失败: " + e.getMessage());
+                player.closeInventory();
             }
         }
     }
 
     private void executeCommand(AIPlayer ai, String cmd) {
-        plugin.getCommandExecutor().execute(ai, cmd);
+        try {
+            plugin.getCommandExecutor().execute(ai, cmd);
+        } catch (Exception e) {
+            plugin.getLogger().warning("GUI 命令执行失败 [" + cmd + "]: " + e.getMessage());
+        }
     }
 
     private ItemStack createButton(Material mat, String name, List<String> lore) {
@@ -327,7 +380,19 @@ public class GuiManager {
         return item;
     }
 
+    /** 填充 [from, to) 范围内的空位为灰色玻璃板 */
+    private void fillEmpty(Inventory inv, int from, int to) {
+        for (int slot = from; slot < to; slot++) {
+            ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+            ItemMeta fm = filler.getItemMeta();
+            fm.setDisplayName("§7");
+            filler.setItemMeta(fm);
+            inv.setItem(slot, filler);
+        }
+    }
+
     public void close(Player player) {
         openGui.remove(player.getUniqueId());
+        selectedAi.remove(player.getUniqueId());
     }
 }

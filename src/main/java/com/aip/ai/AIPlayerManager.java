@@ -103,6 +103,56 @@ public class AIPlayerManager {
         return true;
     }
 
+    /**
+     * 复活已死亡的 AI 玩家（功能 7）
+     * <p>
+     * 在 deathLocation（或世界出生点）重新生成实体，更新 AIPlayer 的 entityId，
+     * 并恢复血量等基础属性。对话历史、个性、情绪、关系等记忆均保留。
+     *
+     * @return 复活后的 AIPlayer，失败返回 null
+     */
+    public AIPlayer revive(String name) {
+        AIPlayer p = aiPlayers.get(name.toLowerCase());
+        if (p == null) return null;
+
+        // 如果实体还活着，无需复活
+        Player existing = p.getEntity();
+        if (existing != null && existing.isValid()) {
+            return p;
+        }
+
+        // 确定复活位置：优先死亡位置，否则默认世界出生点
+        Location loc = p.getDeathLocation();
+        if (loc == null || loc.getWorld() == null) {
+            loc = plugin.getServer().getWorlds().isEmpty()
+                    ? null : plugin.getServer().getWorlds().get(0).getSpawnLocation();
+        }
+        if (loc == null) return null;
+
+        UUID preferredUuid = UUID.randomUUID();
+        Player bukkitPlayer = NpcHelper.createNpc(loc, name, preferredUuid, null);
+        UUID actualUuid = bukkitPlayer.getUniqueId();
+
+        // 恢复基础属性
+        bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
+        bukkitPlayer.setCollidable(true);
+        bukkitPlayer.setCanPickupItems(true);
+        try {
+            bukkitPlayer.setHealth(20.0);
+        } catch (Exception ignored) {
+        }
+        try {
+            bukkitPlayer.setFoodLevel(20);
+        } catch (Exception ignored) {
+        }
+
+        // 更新 AIPlayer 的 entityId 指向新实体
+        p.setEntityId(actualUuid);
+        // 清除死亡位置（已复活）
+        p.setDeathLocation(null);
+        return p;
+    }
+
     public void removeAll() {
         for (AIPlayer p : new java.util.ArrayList<>(aiPlayers.values())) {
             Player player = p.getEntity();
@@ -187,6 +237,18 @@ public class AIPlayerManager {
         if (!plugin.getConfigManager().isConfigured()) return;
         Player v = aiPlayer.getEntity();
         if (v == null || !v.isValid()) return;
+
+        // 功能 8：检查日程 —— 当前世界时间匹配则执行对应动作
+        try {
+            long worldTime = v.getWorld().getTime();
+            for (Schedule schedule : aiPlayer.getSchedules()) {
+                if (schedule.matches(worldTime)) {
+                    plugin.getCommandExecutor().execute(aiPlayer, schedule.getAction());
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("日程检查失败 [" + aiPlayer.getName() + "]: " + e.getMessage());
+        }
 
         try {
             GameDataCollector collector = plugin.getGameDataCollector();
