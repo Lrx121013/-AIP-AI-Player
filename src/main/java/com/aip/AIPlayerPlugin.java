@@ -8,6 +8,7 @@ import com.aip.ai.NpcAnimator;
 import com.aip.commands.AIPCommand;
 import com.aip.config.ConfigManager;
 import com.aip.listeners.ChatListener;
+import com.aip.listeners.NpcDamageListener;
 import com.aip.listeners.NpcDeathListener;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -65,11 +66,14 @@ public class AIPlayerPlugin extends JavaPlugin {
         // 5. 注册事件监听器
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
+        getServer().getPluginManager().registerEvents(new NpcDamageListener(this), this);
 
         // 6. 启动自动活动任务
         if (configManager.isAutonomous()) {
             aiPlayerManager.startAutonomousTask();
         }
+        // 始终启动环境感知任务（让 NPC 对附近威胁/玩家立刻反应）
+        aiPlayerManager.startEnvironmentTask();
 
         // 7. 服务器完全启动后重新检查 NPC 后端（防止 Citizens 比 AIPlayer 后 enable）
         getServer().getScheduler().runTaskLater(this, () -> {

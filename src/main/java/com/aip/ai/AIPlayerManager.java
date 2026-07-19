@@ -20,6 +20,10 @@ public class AIPlayerManager {
     private final AIPlayerPlugin plugin;
     private final Map<String, AIPlayer> aiPlayers = new ConcurrentHashMap<>();
     private BukkitTask autonomousTask;
+    private BukkitTask environmentTask;
+    /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
+    private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
+    private static final long ENV_REACT_COOLDOWN_MS = 8000;
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -151,6 +155,32 @@ public class AIPlayerManager {
             autonomousTask.cancel();
             autonomousTask = null;
         }
+        if (environmentTask != null) {
+            environmentTask.cancel();
+            environmentTask = null;
+        }
+    }
+
+    /**
+     * 启动环境感知任务（默认每 5 秒检查一次附近威胁/玩家）
+     * <p>
+     * 这是"即时反应"机制：即使配置里关了 autonomous，只要附近有怪物/玩家靠近，
+     * NPC 也会立刻（5 秒内）感知到并询问 LLM 决策。
+     */
+    public void startEnvironmentTask() {
+        if (environmentTask != null) return;
+        environmentTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (AIPlayer p : aiPlayers.values()) {
+                    try {
+                        scanEnvironment(p);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("环境感知异常: " + e.getMessage());
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 100L, 100L);  // 5 秒一次
     }
 
     private void triggerAutonomousAction(AIPlayer aiPlayer) {
@@ -180,6 +210,101 @@ public class AIPlayerManager {
             });
         } catch (Exception e) {
             plugin.getLogger().warning("AI 自主活动采集数据失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 环境感知：扫描 NPC 附近的威胁（怪物）和靠近的玩家，
+     * 若发现值得反应的事件则立即触发 LLM 决策。
+     * <p>
+     * 不论 autonomous 是否启用，环境感知都启用。
+     * 每个 NPC 有 8 秒冷却，避免反复触发同一事件。
+     */
+    private void scanEnvironment(AIPlayer aiPlayer) {
+        if (!plugin.getConfigManager().isConfigured()) return;
+        Player v = aiPlayer.getEntity();
+        if (v == null || !v.isValid()) return;
+
+        UUID uid = aiPlayer.getEntityId();
+        long now = System.currentTimeMillis();
+        Long last = lastEnvReact.get(uid);
+        if (last != null && now - last < ENV_REACT_COOLDOWN_MS) return;
+
+        double radius = plugin.getConfigManager().getEntityScanRadius();
+        var nearby = v.getNearbyEntities(radius, radius, radius);
+
+        // 检查：是否有怪物靠近（距离 < 6 格）
+        org.bukkit.entity.LivingEntity nearestMonster = null;
+        double nearestMonsterDist = Double.MAX_VALUE;
+        // 检查：是否有玩家靠近（距离 < 8 格，且不是 NPC 自己）
+        Player nearestPlayer = null;
+        double nearestPlayerDist = Double.MAX_VALUE;
+
+        for (org.bukkit.entity.Entity e : nearby) {
+            if (e instanceof org.bukkit.entity.Monster m) {
+                double d = m.getLocation().distance(v.getLocation());
+                if (d < nearestMonsterDist) {
+                    nearestMonsterDist = d;
+                    nearestMonster = m;
+                }
+            } else if (e instanceof Player p && !p.equals(v)) {
+                double d = p.getLocation().distance(v.getLocation());
+                if (d < nearestPlayerDist) {
+                    nearestPlayerDist = d;
+                    nearestPlayer = p;
+                }
+            }
+        }
+
+        // 低血量也算紧急事件
+        boolean lowHealth = v.getHealth() < 10.0;
+
+        // 是否需要反应？
+        boolean shouldReact = false;
+        StringBuilder trigger = new StringBuilder();
+        if (nearestMonster != null && nearestMonsterDist < 6.0) {
+            shouldReact = true;
+            trigger.append("（紧急事件：附近的怪物 ").append(nearestMonster.getName())
+                    .append(" 距离你仅 ").append(String.format("%.1f", nearestMonsterDist))
+                    .append(" 格，威胁很高！）\n");
+        }
+        if (nearestPlayer != null && nearestPlayerDist < 4.0) {
+            shouldReact = true;
+            trigger.append("（事件：玩家 ").append(nearestPlayer.getName())
+                    .append(" 走到了你身边，距离 ").append(String.format("%.1f", nearestPlayerDist))
+                    .append(" 格。你可以打招呼或攻击。）\n");
+        }
+        if (lowHealth) {
+            shouldReact = true;
+            trigger.append("（紧急事件：你的血量很低（")
+                    .append(String.format("%.1f", v.getHealth()))
+                    .append("），需要立刻恢复或逃跑！）\n");
+        }
+
+        if (!shouldReact) return;
+
+        lastEnvReact.put(uid, now);
+
+        // 触发 LLM 决策（主线程采集 → 异步 LLM → 主线程执行）
+        try {
+            GameDataCollector collector = plugin.getGameDataCollector();
+            String gameData = collector.collect(aiPlayer);
+            final String prompt = trigger + "当前游戏数据：\n" + gameData
+                    + "\n请立刻做出反应（简短，1-2 个命令）。";
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                    String reply = cm.chat(prompt, nearestPlayer);
+                    final String finalReply = reply;
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                    });
+                } catch (Exception e) {
+                    plugin.getLogger().warning("环境反应 LLM 失败: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            plugin.getLogger().warning("环境反应采集数据失败: " + e.getMessage());
         }
     }
 }

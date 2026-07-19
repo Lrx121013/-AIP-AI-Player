@@ -97,6 +97,7 @@ public class ConfigManager {
     public double getAttackDamage() { return attackDamage; }
     public boolean isAllowOpCommands() { return allowOpCommands; }
     public boolean isInvulnerable() { return invulnerable; }
+    public boolean isCounterattack() { return counterattack; }
     public int getScanRadius() { return scanRadius; }
     public int getEntityScanRadius() { return entityScanRadius; }
     public boolean isDebug() { return debug; }
