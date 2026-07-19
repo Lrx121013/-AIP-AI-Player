@@ -104,6 +104,16 @@ public class CommandExecutor {
             case "cmd" -> handleCmd(aiPlayer, args);
             case "equip" -> handleEquip(entity, args);
             case "drop" -> handleDrop(entity, args);
+            // 姿态/动作
+            case "sit" -> handleSit(entity);
+            case "sleep" -> handleSleep(entity);
+            case "sneak" -> handleSneak(entity);
+            case "stand" -> handleStand(entity);
+            case "wave" -> handleWave(entity);
+            case "dance" -> handleDance(entity);
+            case "swing" -> plugin.getNpcAnimator().swingArm(entity);
+            case "look_at_player" -> handleLookAtPlayer(entity, args);
+            case "approach" -> handleApproach(entity, args);
             default -> plugin.getLogger().warning("未知 AI 命令: " + cmd);
         }
     }
@@ -347,5 +357,51 @@ public class CommandExecutor {
         if (toDrop != null && !toDrop.getType().isAir()) {
             entity.getWorld().dropItemNaturally(entity.getLocation(), toDrop);
         }
+    }
+
+    // ===== 姿态/动作 =====
+
+    private void handleSit(Player entity) {
+        plugin.getNpcAnimator().sit(entity);
+    }
+
+    private void handleSleep(Player entity) {
+        plugin.getNpcAnimator().sleep(entity);
+    }
+
+    private void handleSneak(Player entity) {
+        plugin.getNpcAnimator().sneak(entity);
+    }
+
+    private void handleStand(Player entity) {
+        plugin.getNpcAnimator().stand(entity);
+    }
+
+    private void handleWave(Player entity) {
+        plugin.getNpcAnimator().wave(entity);
+    }
+
+    private void handleDance(Player entity) {
+        plugin.getNpcAnimator().dance(entity);
+    }
+
+    private void handleLookAtPlayer(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null) {
+            plugin.getLogger().info("look_at_player: 玩家不在线 " + args[0]);
+            return;
+        }
+        plugin.getNpcAnimator().lookAtPlayerTemporarily(entity, target, 100);
+    }
+
+    private void handleApproach(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null) {
+            plugin.getLogger().info("approach: 玩家不在线 " + args[0]);
+            return;
+        }
+        plugin.getNpcAnimator().approachPlayer(entity, target);
     }
 }

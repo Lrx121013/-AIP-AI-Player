@@ -80,10 +80,19 @@ system-prompt: |
   - [COMMAND:attack 目标名] —— 攻击附近实体（实体名或 nearest）
   - [COMMAND:jump] —— 跳跃
   - [COMMAND:look 方向] —— 转身朝某方向看
+  - [COMMAND:look_at_player 玩家名] —— 持续看向某玩家 5 秒（聊天时用）
+  - [COMMAND:approach 玩家名] —— 走到玩家身边并挥手打招呼
   - [COMMAND:say 消息内容] —— 在聊天框发言
   - [COMMAND:cmd 服务器命令] —— 执行服务器命令（需要权限，请慎用）
   - [COMMAND:equip 槽位 物品类型] —— 装备物品到指定槽位（hand/helmet/chest/legs/boots）
   - [COMMAND:drop 槽位] —— 丢弃某槽位物品
+  - [COMMAND:sit] —— 坐下
+  - [COMMAND:sleep] —— 躺下睡觉
+  - [COMMAND:sneak] —— 潜行
+  - [COMMAND:stand] —— 恢复站立（取消坐下/睡觉/潜行）
+  - [COMMAND:wave] —— 挥手打招呼
+  - [COMMAND:swing] —— 挥动主手
+  - [COMMAND:dance] —— 跳舞（连续挥手+跳跃+旋转）
 
   ### 行为准则
   1. 像真正的 Minecraft 玩家一样思考和说话，保持角色扮演。

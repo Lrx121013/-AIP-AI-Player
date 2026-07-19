@@ -4,6 +4,7 @@ import com.aip.ai.AIPlayerManager;
 import com.aip.ai.CommandExecutor;
 import com.aip.ai.GameDataCollector;
 import com.aip.ai.LLMClient;
+import com.aip.ai.NpcAnimator;
 import com.aip.commands.AIPCommand;
 import com.aip.config.ConfigManager;
 import com.aip.listeners.ChatListener;
@@ -21,6 +22,7 @@ public class AIPlayerPlugin extends JavaPlugin {
     private AIPlayerManager aiPlayerManager;
     private GameDataCollector gameDataCollector;
     private CommandExecutor commandExecutor;
+    private NpcAnimator npcAnimator;
 
     @Override
     public void onEnable() {
@@ -47,6 +49,7 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.llmClient = new LLMClient(configManager);
         this.gameDataCollector = new GameDataCollector(configManager);
         this.commandExecutor = new CommandExecutor(this);
+        this.npcAnimator = new NpcAnimator(this);
         this.aiPlayerManager = new AIPlayerManager(this);
 
         // 4. 注册命令
@@ -110,5 +113,9 @@ public class AIPlayerPlugin extends JavaPlugin {
 
     public CommandExecutor getCommandExecutor() {
         return commandExecutor;
+    }
+
+    public NpcAnimator getNpcAnimator() {
+        return npcAnimator;
     }
 }

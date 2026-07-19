@@ -34,20 +34,23 @@ public class AIPlayerManager {
         }
 
         Location loc = spawner.getLocation();
-        UUID uuid = UUID.randomUUID();
+        UUID preferredUuid = UUID.randomUUID();
 
         // 使用 NpcHelper 创建真正的玩家实体（NPC），返回 Bukkit Player
-        Player bukkitPlayer = NpcHelper.createNpc(loc, name, uuid, null);
+        Player bukkitPlayer = NpcHelper.createNpc(loc, name, preferredUuid, null);
+
+        // 重要：用实体实际的 UUID 跟踪，因为 Citizens 会忽略 preferredUuid 自行生成 UUID
+        UUID actualUuid = bukkitPlayer.getUniqueId();
 
         // 设置基础属性
         bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
         bukkitPlayer.setCollidable(true);
         bukkitPlayer.setCanPickupItems(true);
 
-        AIPlayer aiPlayer = new AIPlayer(plugin, name, uuid);
+        AIPlayer aiPlayer = new AIPlayer(plugin, name, actualUuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
 
-        spawner.sendMessage("§a已生成 AI 玩家: §e" + name);
+        spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
         return aiPlayer;
     }
 
@@ -58,14 +61,15 @@ public class AIPlayerManager {
         if (aiPlayers.containsKey(name.toLowerCase())) {
             return aiPlayers.get(name.toLowerCase());
         }
-        UUID uuid = UUID.randomUUID();
+        UUID preferredUuid = UUID.randomUUID();
 
-        Player bukkitPlayer = NpcHelper.createNpc(loc, name, uuid, null);
+        Player bukkitPlayer = NpcHelper.createNpc(loc, name, preferredUuid, null);
+        UUID actualUuid = bukkitPlayer.getUniqueId();
         bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
         bukkitPlayer.setCollidable(true);
         bukkitPlayer.setCanPickupItems(true);
 
-        AIPlayer aiPlayer = new AIPlayer(plugin, name, uuid);
+        AIPlayer aiPlayer = new AIPlayer(plugin, name, actualUuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
         return aiPlayer;
     }
