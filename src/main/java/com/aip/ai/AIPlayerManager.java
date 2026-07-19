@@ -286,6 +286,7 @@ public class AIPlayerManager {
         lastEnvReact.put(uid, now);
 
         // 触发 LLM 决策（主线程采集 → 异步 LLM → 主线程执行）
+        final Player finalNearestPlayer = nearestPlayer;
         try {
             GameDataCollector collector = plugin.getGameDataCollector();
             String gameData = collector.collect(aiPlayer);
@@ -294,7 +295,7 @@ public class AIPlayerManager {
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
                     ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                    String reply = cm.chat(prompt, nearestPlayer);
+                    String reply = cm.chat(prompt, finalNearestPlayer);
                     final String finalReply = reply;
                     Bukkit.getScheduler().runTask(plugin, () -> {
                         plugin.getCommandExecutor().execute(aiPlayer, finalReply);
