@@ -116,36 +116,38 @@ public class CitizensBackend implements NpcBackend {
     /**
      * 把 Property 皮肤应用到 NPC
      * <p>
-     * Citizens 2.0.30+ 推荐用 NPC.data().set(...) 元数据识别皮肤纹理，
-     * 然后调用 SkinnableEntity.setTexture(Skin) 重新加载。
-     * 这里走元数据方式，重启 NPC 后皮肤会生效。
+     * 使用 MethodHandles 绕过 Paper reflection-rewriter 对 Class.getMethod() 的拦截。
      */
     private void applySkinToNpc(Object npc, Object skinTexture) throws Exception {
         if (skinTexture == null) return;
 
-        String value = (String) skinTexture.getClass().getMethod("getValue").invoke(skinTexture);
-        String signature = (String) skinTexture.getClass().getMethod("getSignature").invoke(skinTexture);
+        // 用 MethodHandles 绕过 Paper reflection-rewriter
+        java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.lookup();
+        java.lang.invoke.MethodHandle getValue = lookup.unreflect(
+                skinTexture.getClass().getDeclaredMethod("getValue"));
+        java.lang.invoke.MethodHandle getSignature = lookup.unreflect(
+                skinTexture.getClass().getDeclaredMethod("getSignature"));
+        String value, signature;
+        try {
+            value = (String) getValue.invoke(skinTexture);
+            signature = (String) getSignature.invoke(skinTexture);
+        } catch (Throwable t) {
+            throw new RuntimeException("获取皮肤纹理失败", t);
+        }
 
         Object data = npc.getClass().getMethod("data").invoke(npc);
-        // Citizens 元数据 key（来自 net.citizensnpcs.api.npc.NPC）
-        // PLAYER_SKIN_TEXTURE_PROPERTIES_METADATA = "player-skin-textures"
-        // PLAYER_SKIN_TEXTURE_SIGNATURES_METADATA = "player-skin-signatures"
-        // PLAYER_SKIN_USE_LATEST = "player-skin-use-latest"
         data.getClass().getMethod("set", String.class, Object.class)
                 .invoke(data, "player-skin-textures", value);
         data.getClass().getMethod("set", String.class, Object.class)
                 .invoke(data, "player-skin-signatures", signature);
-        // 使用设置的纹理而不是最新皮肤
         data.getClass().getMethod("set", String.class, Object.class)
                 .invoke(data, "player-skin-use-latest", false);
 
-        // 尝试调用 SkinnableEntity 接口立即刷新皮肤
         try {
             Object entity = npc.getClass().getMethod("getEntity").invoke(npc);
             if (entity != null) {
                 Class<?> skinnableClass = Class.forName("net.citizensnpcs.api.npc.SkinnableEntity");
                 if (skinnableClass.isInstance(entity)) {
-                    // SkinnableEntity.setTexture(Skin)
                     Class<?> skinClass = Class.forName("net.citizensnpcs.api.util.Skin");
                     Constructor<?> skinCtor = skinClass.getConstructor(String.class, String.class);
                     Object skin = skinCtor.newInstance(value, signature);
@@ -153,7 +155,6 @@ public class CitizensBackend implements NpcBackend {
                 }
             }
         } catch (Throwable ignored) {
-            // 旧版本可能没有 SkinnableEntity，忽略即可，重启 NPC 后会生效
         }
     }
 
