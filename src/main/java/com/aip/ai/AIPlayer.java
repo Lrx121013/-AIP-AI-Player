@@ -5,7 +5,7 @@ import com.aip.config.ConfigManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.entity.Villager;
+import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
@@ -16,7 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * AI 玩家实例：用村民实体作为物理表现，并维护对话历史与 AI 状态
+ * AI 玩家实例：用真正的玩家实体（NPC）作为物理表现，并维护对话历史与 AI 状态
  */
 public class AIPlayer {
 
@@ -46,15 +46,15 @@ public class AIPlayer {
     public UUID getEntityId() { return entityId; }
     public List<Map<String, String>> getConversationHistory() { return conversationHistory; }
 
-    public Villager getEntity() {
+    public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);
-        return ent instanceof Villager ? (Villager) ent : null;
+        return ent instanceof Player ? (Player) ent : null;
     }
 
     public Location getLocation() {
-        Villager v = getEntity();
-        if (v != null) {
-            lastLocation = v.getLocation();
+        Player p = getEntity();
+        if (p != null) {
+            lastLocation = p.getLocation();
             return lastLocation;
         }
         return lastLocation;
@@ -69,8 +69,8 @@ public class AIPlayer {
     public void setActivated(boolean activated) { this.activated = activated; }
 
     public double getHealth() {
-        Villager v = getEntity();
-        if (v != null) return v.getHealth();
+        Player p = getEntity();
+        if (p != null) return p.getHealth();
         return health;
     }
 
@@ -122,7 +122,7 @@ public class AIPlayer {
                     cancel();
                     return;
                 }
-                Villager v = getEntity();
+                Player v = getEntity();
                 if (v == null || !v.isValid()) {
                     cancel();
                     return;

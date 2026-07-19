@@ -4,20 +4,16 @@ import com.aip.AIPlayerPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Villager;
-import org.bukkit.entity.Villager.Profession;
-import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * AI 玩家管理器：负责生成、移除、查询 AI 玩家
+ * AI 玩家管理器：负责生成、移除、查询、换皮肤 AI 玩家
  */
 public class AIPlayerManager {
 
@@ -30,7 +26,7 @@ public class AIPlayerManager {
     }
 
     /**
-     * 在玩家附近生成 AI 玩家
+     * 在玩家附近生成 AI 玩家（NPC 玩家实体）
      */
     public AIPlayer spawn(String name, Player spawner) {
         if (aiPlayers.containsKey(name.toLowerCase())) {
@@ -38,22 +34,17 @@ public class AIPlayerManager {
         }
 
         Location loc = spawner.getLocation();
+        UUID uuid = UUID.randomUUID();
 
-        // 使用村民作为 AI 玩家物理载体
-        Villager villager = (Villager) loc.getWorld().spawnEntity(loc, org.bukkit.entity.EntityType.VILLAGER, SpawnReason.CUSTOM);
-        villager.setCustomName(name);
-        villager.setCustomNameVisible(true);
-        villager.setProfession(Profession.NONE);
-        villager.setVillagerType(Villager.Type.PLAINS);
-        villager.setAI(true);
-        villager.setInvulnerable(plugin.getConfigManager().isInvulnerable());
-        villager.setCollidable(true);
-        villager.setCanPickupItems(true);
-        // 禁止交易
-        villager.setVillagerExperience(0);
-        villager.setRecipes(java.util.Collections.emptyList());
+        // 使用 NpcHelper 创建真正的玩家实体（NPC），返回 Bukkit Player
+        Player bukkitPlayer = NpcHelper.createNpc(loc, name, uuid, null);
 
-        AIPlayer aiPlayer = new AIPlayer(plugin, name, villager.getUniqueId());
+        // 设置基础属性
+        bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
+        bukkitPlayer.setCollidable(true);
+        bukkitPlayer.setCanPickupItems(true);
+
+        AIPlayer aiPlayer = new AIPlayer(plugin, name, uuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
 
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name);
@@ -67,17 +58,14 @@ public class AIPlayerManager {
         if (aiPlayers.containsKey(name.toLowerCase())) {
             return aiPlayers.get(name.toLowerCase());
         }
-        Villager villager = (Villager) loc.getWorld().spawnEntity(loc, org.bukkit.entity.EntityType.VILLAGER, SpawnReason.CUSTOM);
-        villager.setCustomName(name);
-        villager.setCustomNameVisible(true);
-        villager.setProfession(Profession.NONE);
-        villager.setAI(true);
-        villager.setInvulnerable(plugin.getConfigManager().isInvulnerable());
-        villager.setCollidable(true);
-        villager.setCanPickupItems(true);
-        villager.setRecipes(java.util.Collections.emptyList());
+        UUID uuid = UUID.randomUUID();
 
-        AIPlayer aiPlayer = new AIPlayer(plugin, name, villager.getUniqueId());
+        Player bukkitPlayer = NpcHelper.createNpc(loc, name, uuid, null);
+        bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
+        bukkitPlayer.setCollidable(true);
+        bukkitPlayer.setCanPickupItems(true);
+
+        AIPlayer aiPlayer = new AIPlayer(plugin, name, uuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
         return aiPlayer;
     }
@@ -100,22 +88,38 @@ public class AIPlayerManager {
     public boolean remove(String name) {
         AIPlayer p = aiPlayers.remove(name.toLowerCase());
         if (p == null) return false;
-        Villager v = p.getEntity();
-        if (v != null && v.isValid()) {
-            v.remove();
+        Player player = p.getEntity();
+        if (player != null && player.isValid()) {
+            NpcHelper.removeNpc(player);
         }
         return true;
     }
 
     public void removeAll() {
         for (AIPlayer p : new java.util.ArrayList<>(aiPlayers.values())) {
-            Villager v = p.getEntity();
-            if (v != null && v.isValid()) {
-                v.remove();
+            Player player = p.getEntity();
+            if (player != null && player.isValid()) {
+                NpcHelper.removeNpc(player);
             }
         }
         aiPlayers.clear();
         stopAutonomousTask();
+    }
+
+    /**
+     * 设置 AI 玩家的皮肤
+     *
+     * @param name       AI 玩家名称
+     * @param skinTexture 皮肤纹理属性（Property 对象）
+     * @return 是否成功
+     */
+    public boolean setSkin(String name, Object skinTexture) {
+        AIPlayer p = aiPlayers.get(name.toLowerCase());
+        if (p == null) return false;
+        Player player = p.getEntity();
+        if (player == null || !player.isValid()) return false;
+        NpcHelper.updateSkin(player, skinTexture);
+        return true;
     }
 
     /**
@@ -148,7 +152,7 @@ public class AIPlayerManager {
     private void triggerAutonomousAction(AIPlayer aiPlayer) {
         // 本方法由 runTaskTimer 调用，已在主线程
         if (!plugin.getConfigManager().isConfigured()) return;
-        Villager v = aiPlayer.getEntity();
+        Player v = aiPlayer.getEntity();
         if (v == null || !v.isValid()) return;
 
         // 先在主线程采集游戏数据，再异步调用 LLM（避免异步访问实体）

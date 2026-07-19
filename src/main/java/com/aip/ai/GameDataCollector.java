@@ -9,7 +9,6 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Villager;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 
@@ -33,7 +32,7 @@ public class GameDataCollector {
      * 采集 AI 玩家当前游戏数据并格式化为文本
      */
     public String collect(AIPlayer aiPlayer) {
-        Villager entity = aiPlayer.getEntity();
+        Player entity = aiPlayer.getEntity();
         if (entity == null) return "（无法获取实体）";
 
         StringBuilder sb = new StringBuilder();
@@ -184,6 +183,7 @@ public class GameDataCollector {
         StringBuilder sb = new StringBuilder();
         int count = 0;
         for (Player p : self.getWorld().getPlayers()) {
+            if (p.equals(self)) continue; // 排除自己
             if (p.getLocation().distance(self.getLocation()) > radius) continue;
             Location l = p.getLocation();
             sb.append(String.format("  %s (血量 %.1f, 手持 %s) @ %d,%d,%d\n",

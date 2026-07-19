@@ -4,6 +4,7 @@ import com.aip.AIPlayerPlugin;
 import com.aip.ai.AIPlayer;
 import com.aip.ai.ConversationManager;
 import com.aip.ai.GameDataCollector;
+import com.aip.ai.NpcHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -50,6 +51,7 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             case "reload" -> handleReload(sender);
             case "talk" -> handleTalk(sender, args);
             case "reset" -> handleReset(sender, args);
+            case "skin" -> handleSkin(sender, args);
             default -> sendHelp(sender);
         }
         return true;
@@ -63,6 +65,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/aip talk <名字> <消息> §7- 与 AI 玩家对话");
         sender.sendMessage("§e/aip reset <名字> §7- 重置 AI 对话历史");
         sender.sendMessage("§e/aip reload §7- 重新加载配置");
+        sender.sendMessage("§e/aip skin <名字> skinurl:<URL> §7- 通过皮肤图片 URL 设置皮肤");
+        sender.sendMessage("§e/aip skin <名字> playerskin:<玩家名> §7- 复制在线玩家的皮肤");
         sender.sendMessage("§7你也可以在聊天框输入 @<AI名字> <消息> 来对话");
     }
 
@@ -234,17 +238,86 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§a已重置 " + args[1] + " 的对话历史。");
     }
 
+    /**
+     * 处理皮肤设置命令
+     * /aip skin <名字> skinurl:<URL>       —— 通过皮肤图片 URL 设置皮肤
+     * /aip skin <名字> playerskin:<玩家名>  —— 复制在线玩家的皮肤
+     */
+    private void handleSkin(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("aip.admin")) {
+            sender.sendMessage("§c你没有权限执行此操作。");
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage("§c用法:");
+            sender.sendMessage("§e/aip skin <名字> skinurl:<URL>");
+            sender.sendMessage("§e/aip skin <名字> playerskin:<玩家名>");
+            return;
+        }
+
+        String name = args[1];
+        AIPlayer aiPlayer = plugin.getAiPlayerManager().get(name);
+        if (aiPlayer == null) {
+            sender.sendMessage("§c未找到 AI 玩家: " + name);
+            return;
+        }
+
+        String skinArg = args[2];
+
+        // 通过 URL 设置皮肤
+        if (skinArg.startsWith("skinurl:")) {
+            String skinUrl = skinArg.substring("skinurl:".length());
+            sender.sendMessage("§7正在从 URL 获取皮肤，请稍候...");
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    Object skin = NpcHelper.fetchSkinFromUrl(skinUrl);
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        boolean ok = plugin.getAiPlayerManager().setSkin(name, skin);
+                        sender.sendMessage(ok ? "§a已通过 URL 设置 " + name + " 的皮肤"
+                                              : "§c设置皮肤失败：AI 实体不存在");
+                    });
+                } catch (Exception e) {
+                    sender.sendMessage("§c获取皮肤失败: " + e.getMessage());
+                }
+            });
+            return;
+        }
+
+        // 复制在线玩家皮肤
+        if (skinArg.startsWith("playerskin:")) {
+            String playerName = skinArg.substring("playerskin:".length());
+            Player target = Bukkit.getPlayerExact(playerName);
+            if (target == null) {
+                sender.sendMessage("§c玩家不在线: " + playerName);
+                return;
+            }
+            Object skin = NpcHelper.getSkinFromPlayer(target);
+            if (skin == null) {
+                sender.sendMessage("§c该玩家没有皮肤数据");
+                return;
+            }
+            boolean ok = plugin.getAiPlayerManager().setSkin(name, skin);
+            sender.sendMessage(ok ? "§a已复制 " + playerName + " 的皮肤到 " + name
+                                  : "§c设置皮肤失败：AI 实体不存在");
+            return;
+        }
+
+        sender.sendMessage("§c未识别的皮肤参数。请使用 skinurl:<URL> 或 playerskin:<玩家名>");
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> result = new ArrayList<>();
         if (args.length == 1) {
-            result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset");
+            result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
-            if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset")) {
+            if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")) {
                 result = plugin.getAiPlayerManager().getAll().stream()
                         .map(AIPlayer::getName).collect(Collectors.toList());
             }
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("skin")) {
+            result = Arrays.asList("skinurl:", "playerskin:");
         }
         // 过滤已输入的内容
         String prefix = args[args.length - 1].toLowerCase();
