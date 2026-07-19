@@ -2,9 +2,11 @@ package com.aip;
 
 import com.aip.ai.AIPlayerManager;
 import com.aip.ai.CommandExecutor;
+import com.aip.ApprovalManager;
 import com.aip.ai.GameDataCollector;
 import com.aip.ai.LLMClient;
 import com.aip.ai.NpcAnimator;
+import com.aip.ai.NpcHelper;
 import com.aip.ai.PlayerProfileManager;
 import com.aip.ai.RelationManager;
 import com.aip.ai.StrategyEngine;
@@ -18,6 +20,7 @@ import com.aip.listeners.ChatListener;
 import com.aip.listeners.GuiListener;
 import com.aip.listeners.NpcDamageListener;
 import com.aip.listeners.NpcDeathListener;
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -44,6 +47,9 @@ public class AIPlayerPlugin extends JavaPlugin {
     private PlayerProfileManager playerProfileManager;
     private StrategyEngine strategyEngine;
 
+    // ===== P4 新增管理器 =====
+    private ApprovalManager approvalManager;
+
     @Override
     public void onEnable() {
         instance = this;
@@ -52,6 +58,9 @@ public class AIPlayerPlugin extends JavaPlugin {
         saveDefaultConfig();
         this.configManager = new ConfigManager(this);
         this.configManager.load();
+
+        // P4：初始化审批管理器（需在 configManager 之后）
+        this.approvalManager = new ApprovalManager(this);
 
         // 2. 检查是否已配置 API Key（未配置则给出提示）
         if (!configManager.isConfigured()) {
@@ -108,19 +117,22 @@ public class AIPlayerPlugin extends JavaPlugin {
         }
 
         // 6. 启动自动活动任务
-        if (configManager.isAutonomous()) {
-            aiPlayerManager.startAutonomousTask();
-        }
+        aiPlayerManager.startAutonomousTask();
         // 始终启动环境感知任务（让 NPC 对附近威胁/玩家立刻反应）
         aiPlayerManager.startEnvironmentTask();
         // 启动长期任务调度器（功能 5）
         taskManager.start();
 
-        // 7. 服务器完全启动后重新检查 NPC 后端（防止 Citizens 比 AIPlayer 后 enable）
-        getServer().getScheduler().runTaskLater(this, () -> {
-            com.aip.ai.NpcHelper.recheckBackend();
-            getLogger().info("NPC 后端: " + com.aip.ai.NpcHelper.backendName());
-        }, 40L);  // 2 秒后
+        // 立即同步检查一次后端，避免环境任务用错后端
+        try {
+            NpcHelper.recheckBackend();
+        } catch (Throwable ignored) {}
+        // 5 秒后再确认一次（Citizens 可能晚于本插件 enable）
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            try {
+                NpcHelper.recheckBackend();
+            } catch (Throwable ignored) {}
+        }, 100L);
 
         getLogger().info("AI Player 插件已启用。使用 /aip spawn <名字> 来生成 AI 玩家。");
     }
@@ -133,6 +145,8 @@ public class AIPlayerPlugin extends JavaPlugin {
         if (aiPlayerManager != null) {
             aiPlayerManager.removeAll();
         }
+        // 取消本插件启动的所有 BukkitRunnable 任务（walk/follow/combo/look_at_player 等）
+        Bukkit.getScheduler().cancelTasks(this);
         getLogger().info("AI Player 插件已禁用。");
     }
 
@@ -202,5 +216,10 @@ public class AIPlayerPlugin extends JavaPlugin {
     /** P3：策略引擎 */
     public StrategyEngine getStrategyEngine() {
         return strategyEngine;
+    }
+
+    /** P4：审批管理器 */
+    public ApprovalManager getApprovalManager() {
+        return approvalManager;
     }
 }

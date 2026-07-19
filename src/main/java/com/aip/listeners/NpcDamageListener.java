@@ -105,6 +105,8 @@ public class NpcDamageListener implements Listener {
                 lastCounterAttack.put(victimId, now);
                 // 反击伤害 = 配置的攻击伤害
                 double dmg = plugin.getConfigManager().getAttackDamage();
+                if (attacker == null || !attacker.isValid()) return;
+                if (victim == null || !victim.isValid() || victim.isDead()) return;
                 attacker.damage(dmg, victim);
                 shout(victimId, ai.getName(), COUNTER_LINES);
             }
@@ -116,6 +118,7 @@ public class NpcDamageListener implements Listener {
         final double finalDamage = event.getFinalDamage();
         Bukkit.getScheduler().runTask(plugin, () -> {
             try {
+                if (victim == null || !victim.isValid() || victim.isDead()) return;
                 GameDataCollector collector = plugin.getGameDataCollector();
                 String gameData = collector.collect(ai);
                 String attackerName = finalAttacker instanceof Player p ? p.getName() :

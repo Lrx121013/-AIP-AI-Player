@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * AI 玩家实例：用真正的玩家实体（NPC）作为物理表现，并维护对话历史与 AI 状态
@@ -48,10 +49,14 @@ public class AIPlayer {
     private final List<DeathRecord> deathLog = new ArrayList<>();
     /** 上一轮命令执行结果，用于回流给 LLM（P1：执行结果回流） */
     private ExecutionResult lastCommandResult;
+    /** P3：上次 query 命令的查询结果，下一轮 prompt 注入后清除 */
+    private String lastQueryResult;
     /** P2：长期目标管理器 */
-    private final GoalManager goalManager = new GoalManager();
+    private GoalManager goalManager;
     /** P3：长期记忆系统 */
     private final LongTermMemory memory = new LongTermMemory();
+    /** P1：AI 正在思考的忙标记（防重入），原子操作 */
+    private final AtomicBoolean busy = new AtomicBoolean(false);
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -62,6 +67,7 @@ public class AIPlayer {
         this.activated = false;
         this.health = 20.0;
         this.foodLevel = 20;
+        this.goalManager = new GoalManager(plugin, this);
     }
 
     public String getName() { return name; }
@@ -112,11 +118,20 @@ public class AIPlayer {
         this.lastCommandResult = lastCommandResult;
     }
 
+    /** P3：上次 query 命令的查询结果（可能为 null） */
+    public String getLastQueryResult() { return lastQueryResult; }
+    public void setLastQueryResult(String lastQueryResult) {
+        this.lastQueryResult = lastQueryResult;
+    }
+
     /** P2：长期目标管理器 */
     public GoalManager getGoalManager() { return goalManager; }
 
     /** P3：长期记忆系统 */
     public LongTermMemory getMemory() { return memory; }
+
+    /** P1：忙标记（用于 chat 防重入） */
+    public AtomicBoolean getBusy() { return busy; }
 
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);

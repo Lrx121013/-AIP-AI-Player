@@ -1,5 +1,6 @@
 package com.aip.ai;
 
+import com.aip.util.LocationUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Sound;
@@ -183,27 +184,32 @@ public class NpcAnimator {
             final int maxSteps = 40;
             @Override
             public void run() {
-                if (steps >= maxSteps || !npc.isValid()) {
+                try {
+                    if (steps >= maxSteps || !npc.isValid()) {
+                        cancel();
+                        return;
+                    }
+                    Location cur = npc.getLocation();
+                    if (LocationUtil.safeDistance(cur, dest) < 1.0) {
+                        lookAtPlayer(npc, target);
+                        swingArm(npc);  // 打招呼挥手
+                        cancel();
+                        return;
+                    }
+                    Vector step = dest.toVector().subtract(cur.toVector());
+                    if (step.lengthSquared() < 0.001) {
+                        cancel();
+                        return;
+                    }
+                    step.normalize().multiply(0.6);
+                    Location next = cur.clone().add(step);
+                    next.setY(cur.getY());
+                    npc.teleport(next);
+                    steps++;
+                } catch (Exception e) {
+                    plugin.getLogger().warning("NPC approachPlayer 异常: " + e.getMessage());
                     cancel();
-                    return;
                 }
-                Location cur = npc.getLocation();
-                if (cur.distance(dest) < 1.0) {
-                    lookAtPlayer(npc, target);
-                    swingArm(npc);  // 打招呼挥手
-                    cancel();
-                    return;
-                }
-                Vector step = dest.toVector().subtract(cur.toVector());
-                if (step.lengthSquared() < 0.001) {
-                    cancel();
-                    return;
-                }
-                step.normalize().multiply(0.6);
-                Location next = cur.clone().add(step);
-                next.setY(cur.getY());
-                npc.teleport(next);
-                steps++;
             }
         }.runTaskTimer(plugin, 0L, 5L);
     }

@@ -1,6 +1,7 @@
 package com.aip.ai;
 
 import com.aip.AIPlayerPlugin;
+import com.aip.util.LocationUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -23,7 +24,6 @@ public class AIPlayerManager {
     private BukkitTask environmentTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
-    private static final long ENV_REACT_COOLDOWN_MS = 8000;
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -63,6 +63,8 @@ public class AIPlayerManager {
         }
 
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
+        // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
+        plugin.getGameDataCollector().invalidateCache(actualUuid);
         return aiPlayer;
     }
 
@@ -80,6 +82,8 @@ public class AIPlayerManager {
         bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
         bukkitPlayer.setCollidable(true);
         bukkitPlayer.setCanPickupItems(true);
+        // 赋予 OP 权限，使 NPC 能通过 Bukkit.dispatchCommand 执行服务器命令（gamemode、tp 等）
+        bukkitPlayer.setOp(true);
 
         AIPlayer aiPlayer = new AIPlayer(plugin, name, actualUuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
@@ -89,6 +93,8 @@ public class AIPlayerManager {
             aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
             aiPlayer.setPersonality(Personality.VILLAIN);
         }
+        // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
+        plugin.getGameDataCollector().invalidateCache(actualUuid);
         return aiPlayer;
     }
 
@@ -110,6 +116,10 @@ public class AIPlayerManager {
     public boolean remove(String name) {
         AIPlayer p = aiPlayers.remove(name.toLowerCase());
         if (p == null) return false;
+        // 清理 GameDataCollector 缓存，避免后续读到已移除实体的数据
+        plugin.getGameDataCollector().invalidateCache(p.getEntityId());
+        // 取消该 AI 所有未完成的追击任务，避免任务结束后操作已移除的实体
+        p.getGoalManager().cancelAllPursuits();
         Player player = p.getEntity();
         if (player != null && player.isValid()) {
             NpcHelper.removeNpc(player);
@@ -151,6 +161,8 @@ public class AIPlayerManager {
         bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
         bukkitPlayer.setCollidable(true);
         bukkitPlayer.setCanPickupItems(true);
+        // 赋予 OP 权限，使 NPC 能通过 Bukkit.dispatchCommand 执行服务器命令（gamemode、tp 等）
+        bukkitPlayer.setOp(true);
         try {
             bukkitPlayer.setHealth(20.0);
         } catch (Exception ignored) {
@@ -164,6 +176,9 @@ public class AIPlayerManager {
         p.setEntityId(actualUuid);
         // 清除死亡位置（已复活）
         p.setDeathLocation(null);
+        // 清理 GameDataCollector 旧缓存，确保下次采集使用新实体
+        plugin.getGameDataCollector().invalidateCache(actualUuid);
+        plugin.getLogger().info("AI " + name + " 复活成功");
         return p;
     }
 
@@ -233,6 +248,7 @@ public class AIPlayerManager {
      */
     public void startEnvironmentTask() {
         if (environmentTask != null) return;
+        int ticks = plugin.getConfigManager().getEnvScanInterval();
         environmentTask = new BukkitRunnable() {
             @Override
             public void run() {
@@ -244,13 +260,14 @@ public class AIPlayerManager {
                     }
                 }
             }
-        }.runTaskTimer(plugin, 100L, 100L);  // 5 秒一次
+        }.runTaskTimer(plugin, ticks, ticks);
     }
 
     private void triggerAutonomousAction(AIPlayer aiPlayer) {
         if (!plugin.getConfigManager().isConfigured()) return;
         Player v = aiPlayer.getEntity();
         if (v == null || !v.isValid()) return;
+        if (aiPlayer.getBusy().get()) return;  // 正在处理上一轮 LLM，跳过本轮自主活动
 
         // 功能 8：检查日程 —— 当前世界时间匹配则执行对应动作
         try {
@@ -315,7 +332,8 @@ public class AIPlayerManager {
         UUID uid = aiPlayer.getEntityId();
         long now = System.currentTimeMillis();
         Long last = lastEnvReact.get(uid);
-        if (last != null && now - last < ENV_REACT_COOLDOWN_MS) return;
+        if (last != null && now - last < plugin.getConfigManager().getEnvReactCooldownMs()) return;
+        if (aiPlayer.getBusy().get()) return;  // 正在处理上一轮 LLM，跳过本轮环境感知
 
         double radius = plugin.getConfigManager().getEntityScanRadius();
         var nearby = v.getNearbyEntities(radius, radius, radius);
@@ -329,13 +347,13 @@ public class AIPlayerManager {
 
         for (org.bukkit.entity.Entity e : nearby) {
             if (e instanceof org.bukkit.entity.Monster m) {
-                double d = m.getLocation().distance(v.getLocation());
+                double d = LocationUtil.safeDistance(m.getLocation(), v.getLocation());
                 if (d < nearestMonsterDist) {
                     nearestMonsterDist = d;
                     nearestMonster = m;
                 }
             } else if (e instanceof Player p && !p.equals(v)) {
-                double d = p.getLocation().distance(v.getLocation());
+                double d = LocationUtil.safeDistance(p.getLocation(), v.getLocation());
                 if (d < nearestPlayerDist) {
                     nearestPlayerDist = d;
                     nearestPlayer = p;

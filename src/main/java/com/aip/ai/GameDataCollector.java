@@ -2,6 +2,7 @@ package com.aip.ai;
 
 import com.aip.AIPlayerPlugin;
 import com.aip.config.ConfigManager;
+import com.aip.util.LocationUtil;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -20,7 +21,10 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 游戏数据采集器：收集 AI 玩家周围尽可能完整的游戏信息
@@ -42,6 +46,19 @@ public class GameDataCollector {
     private final ConfigManager config;
     private final AIPlayerPlugin plugin;
 
+    /** GameDataCollector 2 秒 TTL 缓存，避免自主活动+环境感知+@提及三入口重复采集 */
+    private static final long CACHE_TTL_MS = 2000;
+    private final Map<UUID, CacheEntry> collectCache = new ConcurrentHashMap<>();
+
+    private static class CacheEntry {
+        final String data;
+        final long timestamp;
+        CacheEntry(String data, long timestamp) {
+            this.data = data;
+            this.timestamp = timestamp;
+        }
+    }
+
     public GameDataCollector(AIPlayerPlugin plugin) {
         this.plugin = plugin;
         this.config = plugin.getConfigManager();
@@ -53,6 +70,14 @@ public class GameDataCollector {
     public String collect(AIPlayer aiPlayer) {
         Player entity = aiPlayer.getEntity();
         if (entity == null) return "（无法获取实体）";
+        if (entity.isDead()) return "（AI 已死亡）";
+
+        UUID entityId = entity.getUniqueId();
+        long now = System.currentTimeMillis();
+        CacheEntry cached = collectCache.get(entityId);
+        if (cached != null && now - cached.timestamp < CACHE_TTL_MS) {
+            return cached.data;
+        }
 
         StringBuilder sb = new StringBuilder();
         Location loc = entity.getLocation();
@@ -149,7 +174,7 @@ public class GameDataCollector {
         if (target != null && !target.getType().isAir()) {
             sb.append(String.format("  %s @ %d,%d,%d (距离 %d)\n",
                     target.getType().name(), target.getX(), target.getY(), target.getZ(),
-                    (int) target.getLocation().distance(loc)));
+                    (int) LocationUtil.safeDistance(target.getLocation(), loc)));
         } else {
             sb.append("  (8 格内无目标方块)\n");
         }
@@ -185,7 +210,9 @@ public class GameDataCollector {
         }
 
         sb.append("=== 数据结束 ===\n");
-        return sb.toString();
+        String result = sb.toString();
+        collectCache.put(entityId, new CacheEntry(result, System.currentTimeMillis()));
+        return result;
     }
 
     private String formatTime(long ticks) {
@@ -281,7 +308,7 @@ public class GameDataCollector {
                     if (seen.contains(key) && count > 10) continue;  // 同类型只列一次（前 10 个除外）
                     seen.add(key);
 
-                    double dist = b.getLocation().distance(center);
+                    double dist = LocationUtil.safeDistance(b.getLocation(), center);
                     sb.append(String.format("  %s @ %d,%d,%d (距 %.1f)\n",
                             type.name(), b.getX(), b.getY(), b.getZ(), dist));
                     count++;
@@ -356,16 +383,20 @@ public class GameDataCollector {
         List<Entity> nearby = self.getNearbyEntities(radius, radius, radius);
         // 按距离排序
         nearby.sort((a, b) -> {
-            double da = a.getLocation().distanceSquared(self.getLocation());
-            double db = b.getLocation().distanceSquared(self.getLocation());
-            return Double.compare(da, db);
+            try {
+                double da = LocationUtil.safeDistanceSquared(a.getLocation(), self.getLocation());
+                double db = LocationUtil.safeDistanceSquared(b.getLocation(), self.getLocation());
+                return Double.compare(da, db);
+            } catch (Exception ex) {
+                return 0;
+            }
         });
         // 兼容 1.21+ 新 Attribute API
         org.bukkit.attribute.Attribute maxHealthAttr = resolveAttribute("max_health");
         for (Entity e : nearby) {
             if (e.equals(self)) continue;
             Location l = e.getLocation();
-            double dist = self.getLocation().distance(l);
+            double dist = LocationUtil.safeDistance(self.getLocation(), l);
             String type = e.getType().name();
             String name = e.getName();
             String extra = "";
@@ -401,7 +432,7 @@ public class GameDataCollector {
         int count = 0;
         for (Player p : self.getWorld().getPlayers()) {
             if (p.equals(self)) continue;
-            double dist = p.getLocation().distance(self.getLocation());
+            double dist = LocationUtil.safeDistance(p.getLocation(), self.getLocation());
             if (dist > radius) continue;
             Location l = p.getLocation();
             ItemStack hand = p.getInventory().getItemInMainHand();
@@ -437,5 +468,10 @@ public class GameDataCollector {
         }
         if (count == 0) sb.append("  (服务器无其他玩家)\n");
         return sb.toString();
+    }
+
+    /** 清除指定 NPC 的缓存（spawn/remove/死亡/世界切换时调用） */
+    public void invalidateCache(UUID entityId) {
+        collectCache.remove(entityId);
     }
 }

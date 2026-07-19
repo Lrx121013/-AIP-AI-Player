@@ -33,6 +33,8 @@ commands:
       /aip villain on|off|status - Toggle villain mode
       /aip team role <ai> <role> - Set combat role
       /aip team target <player> - Set coordination target
+      /aip approve <id> - Approve pending AI command
+      /aip reject <id> - Reject pending AI command
     aliases:
       - aiplayer
       - ai

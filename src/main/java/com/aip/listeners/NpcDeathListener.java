@@ -61,8 +61,13 @@ public class NpcDeathListener implements Listener {
         ai.getDeathLog().add(new DeathRecord(System.currentTimeMillis(), cause, killer));
 
         // P3：长期记忆——记录死亡事件
-        String killerNameForMemory = event.getEntity().getKiller() != null
-                ? event.getEntity().getKiller().getName() : "未知";
+        String killerNameForMemory;
+        try {
+            org.bukkit.entity.Player killerPlayer = event.getEntity().getKiller();
+            killerNameForMemory = killerPlayer != null ? killerPlayer.getName() : "未知";
+        } catch (Exception e) {
+            killerNameForMemory = "未知";
+        }
         ai.getMemory().addRecord(MemoryRecord.Type.DEATH,
                 "被 " + killerNameForMemory + " 击杀", killerNameForMemory);
 
@@ -70,7 +75,8 @@ public class NpcDeathListener implements Listener {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             try {
                 org.bukkit.entity.Player entity = event.getEntity();
-                if (entity != null && entity.isValid()) {
+                if (entity == null) return;
+                if (entity.isValid()) {
                     NpcHelper.removeNpc(entity);
                 }
                 plugin.getLogger().info("NPC " + name + " 已倒下，实体已移除（可用 /aip revive " + name + " 复活）");
@@ -78,5 +84,20 @@ public class NpcDeathListener implements Listener {
                 plugin.getLogger().warning("NPC " + name + " 移除实体失败: " + e.getMessage());
             }
         }, 1L);
+
+        // P2：NPC 死亡后 5 秒（100 tick）自动复活，保留对话历史/个性/记忆
+        if (plugin.getConfigManager().isAutoRevive()) {
+            final String aiName = name;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                try {
+                    com.aip.ai.AIPlayer revived = plugin.getAiPlayerManager().revive(aiName);
+                    if (revived != null) {
+                        plugin.getLogger().info("AI " + aiName + " 已自动复活");
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().warning("AI " + aiName + " 自动复活失败: " + e.getMessage());
+                }
+            }, 100L);  // 5 秒后复活
+        }
     }
 }

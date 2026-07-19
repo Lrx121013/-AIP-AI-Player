@@ -51,7 +51,7 @@ public class ConfigManager {
             }
         }
 
-        this.autonomous = cfg.getBoolean("ai.autonomous", false);
+        this.autonomous = cfg.getBoolean("ai.autonomous", true);
         this.autonomousInterval = cfg.getInt("ai.autonomous-interval", 30);
         this.maxHistory = cfg.getInt("ai.max-history", 20);
         this.moveSpeed = cfg.getDouble("ai.move-speed", 0.6);
@@ -107,5 +107,32 @@ public class ConfigManager {
      */
     public boolean isVillainMode() {
         return plugin.getConfig().getBoolean("ai.villain-mode", false);
+    }
+
+    /** 环境感知扫描间隔（ticks），实时读取配置 */
+    public int getEnvScanInterval() {
+        return plugin.getConfig().getInt("ai.env-scan-interval", 60);
+    }
+
+    /** 环境反应冷却（毫秒），实时读取配置 */
+    public long getEnvReactCooldownMs() {
+        return plugin.getConfig().getLong("ai.env-react-cooldown-ms", 4000L);
+    }
+
+    /** 是否自动复活死亡的 AI 玩家，实时读取配置 */
+    public boolean isAutoRevive() {
+        return plugin.getConfig().getBoolean("ai.auto-revive", true);
+    }
+
+    public boolean isStream() {
+        return plugin.getConfig().getBoolean("provider.stream", true);
+    }
+
+    public int getMaxTokens() {
+        return plugin.getConfig().getInt("provider.max-tokens", 1024);
+    }
+
+    public double getTemperature() {
+        return plugin.getConfig().getDouble("provider.temperature", 0.7);
     }
 }

@@ -32,6 +32,14 @@ public class ConversationManager {
      * @return AI 回复的原始文本（含 [COMMAND:...] 命令）
      */
     public String chat(String userMessage, Player speaker) throws IOException {
+        // P1：忙标记防重入，已被占用则直接返回 null（caller 自行处理）
+        if (!aiPlayer.getBusy().compareAndSet(false, true)) {
+            if (speaker != null) {
+                speaker.sendMessage("§7" + aiPlayer.getName() + " 正在思考…");
+            }
+            return null;
+        }
+        try {
         ConfigManager cfg = plugin.getConfigManager();
 
         // 1. 准备消息列表
@@ -48,7 +56,7 @@ public class ConversationManager {
             systemPromptBuilder.append("\n你现在心情愉悦");
         }
         // P1：自动注入命令文档（替代 config.yml 中删除的硬编码命令清单）
-        String commandDocs = plugin.getCommandExecutor().getCommandDocs();
+        String commandDocs = plugin.getCommandExecutor().getCachedDocs();
         if (commandDocs != null && !commandDocs.isEmpty()) {
             systemPromptBuilder.append("\n\n").append(commandDocs);
         }
@@ -84,6 +92,12 @@ public class ConversationManager {
             // 回流消费后清空，避免重复提示
             aiPlayer.setLastCommandResult(null);
         }
+        // P3：注入上次 query 命令的查询结果
+        String lastQuery = aiPlayer.getLastQueryResult();
+        if (lastQuery != null && !lastQuery.isEmpty()) {
+            userContent.append("上次查询结果：\n").append(lastQuery).append("\n\n");
+            aiPlayer.setLastQueryResult(null);  // 注入后清除避免重复
+        }
         String prefix = speaker != null ? "玩家 " + speaker.getName() + " @你 说：" : "（系统提示）";
         userContent.append(prefix).append(userMessage);
         messages.add(makeMessage("user", userContent.toString()));
@@ -95,10 +109,14 @@ public class ConversationManager {
             }
         }
 
-        // 2. 调用 LLM
+        // 2. 调用 LLM（P1：流式，首 token 到达时给玩家"正在打字"提示）
         String reply;
         try {
-            reply = plugin.getLlmClient().chat(messages);
+            reply = plugin.getLlmClient().chatStream(messages, (token, isFirst) -> {
+                if (isFirst && speaker != null) {
+                    speaker.sendMessage("§7" + aiPlayer.getName() + " 正在打字…");
+                }
+            });
         } catch (IOException e) {
             String errMsg = "（AI 接口出错：" + e.getMessage() + "）";
             plugin.getLogger().warning("LLM 调用失败: " + e.getMessage());
@@ -119,6 +137,10 @@ public class ConversationManager {
         aiPlayer.addHistory("assistant", reply);
 
         return reply;
+        } finally {
+            // P1：释放忙标记，允许下一轮对话进入
+            aiPlayer.getBusy().set(false);
+        }
     }
 
     private Map<String, String> makeMessage(String role, String content) {

@@ -20,8 +20,15 @@ provider:
   # 模型名称（如 gpt-4o-mini, deepseek-chat, glm-4-flash 等）
   model: "gpt-4o-mini"
 
+  # 是否启用流式响应（加速首 token 返回）
+  stream: true
+  # 单次回复最大 token 数
+  max-tokens: 1024
+  # 采样温度
+  temperature: 0.7
+
   # 请求超时（秒）
-  timeout: 60
+  timeout: 20
 
   # 可选：自定义请求头（部分代理需要）
   # extra-headers:
@@ -35,7 +42,16 @@ ai:
   autonomous: true
 
   # 自动活动间隔（秒）
-  autonomous-interval: 30
+  autonomous-interval: 15
+
+  # 环境感知扫描间隔（ticks，20 ticks = 1 秒）
+  env-scan-interval: 60
+
+  # 环境反应冷却（毫秒），避免对同一威胁反复触发
+  env-react-cooldown-ms: 4000
+
+  # 是否自动复活死亡的 AI 玩家
+  auto-revive: true
 
   # 反派模式：开启后所有 AI 强制 VILLAIN 人格
   villain-mode: false
@@ -51,6 +67,9 @@ ai:
 
   # 是否允许 AI 执行 OP 级命令（建议关闭，安全考虑）
   allow-op-commands: false
+
+  # P4：AI 执行这些命令前需要 OP 审批（空数组表示不开启审批）
+  require-approval-for: []
 
   # AI 是否可被攻击（true=无敌，false=可被攻击且会反击）
   invulnerable: false

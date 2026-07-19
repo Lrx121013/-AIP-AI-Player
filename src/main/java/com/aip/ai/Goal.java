@@ -15,6 +15,8 @@ public class Goal {
     private int progress; // 0-100
     private boolean completed;
     private final long createdAt;
+    /** 追击目标（玩家名或 "x,y,z" 坐标字符串），为 null 表示无追击目标 */
+    private String currentTarget;
 
     public Goal(String description, int priority) {
         this.id = UUID.randomUUID().toString().substring(0, 8);
@@ -50,4 +52,7 @@ public class Goal {
     }
 
     public long getCreatedAt() { return createdAt; }
+
+    public String getCurrentTarget() { return currentTarget; }
+    public void setCurrentTarget(String currentTarget) { this.currentTarget = currentTarget; }
 }

@@ -1,6 +1,7 @@
 package com.aip.ai;
 
 import com.aip.AIPlayerPlugin;
+import com.aip.util.LocationUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -36,9 +37,17 @@ public class CommandExecutor {
     private static final Pattern COMMAND_PATTERN = Pattern.compile("\\[COMMAND:([^\\]]+)]");
 
     private final AIPlayerPlugin plugin;
+    /** P1：命令文档缓存（构造时一次性生成，避免每次对话都反射扫描） */
+    private final String cachedDocs;
 
     public CommandExecutor(AIPlayerPlugin plugin) {
         this.plugin = plugin;
+        this.cachedDocs = getCommandDocs();
+    }
+
+    /** P1：获取缓存的命令文档 */
+    public String getCachedDocs() {
+        return cachedDocs;
     }
 
     /**
@@ -82,6 +91,14 @@ public class CommandExecutor {
 
         // 1. 广播对话文字
         String spokenText = spoken.toString().trim();
+
+        // 广播前校验实体有效性，避免对已失效实体执行操作
+        Player entityForChat = aiPlayer.getEntity();
+        if (entityForChat == null || !entityForChat.isValid()) {
+            plugin.getLogger().fine("AI " + aiPlayer.getName() + " 实体已失效，跳过本轮广播与命令执行");
+            return null;
+        }
+
         if (!spokenText.isEmpty()) {
             aiPlayer.sayInChat(spokenText);
         }
@@ -91,7 +108,9 @@ public class CommandExecutor {
 
         // 2. 顺序执行命令，记录最后一条结果
         ExecutionResult lastResult = null;
-        for (String cmd : commands) {
+        int skippedCommands = 0;
+        for (int i = 0; i < commands.size(); i++) {
+            String cmd = commands.get(i);
             ExecutionResult result;
             try {
                 result = dispatchCommand(aiPlayer, cmd);
@@ -109,6 +128,15 @@ public class CommandExecutor {
                 plugin.getLogger().warning("执行命令失败 [" + cmd + "]: " + result.getReason());
             }
             lastResult = result;
+
+            // 实体死亡后跳过剩余命令（如 kill 命令后实体已失效）
+            if (aiPlayer.getEntity() == null || !aiPlayer.getEntity().isValid()) {
+                skippedCommands = commands.size() - i - 1;
+                break;
+            }
+        }
+        if (skippedCommands > 0) {
+            plugin.getLogger().info("AI 已死亡，跳过剩余 " + skippedCommands + " 条命令");
         }
 
         // 3. 把最后一条命令结果存入 aiPlayer，供下一轮对话回流给 LLM
@@ -139,6 +167,12 @@ public class CommandExecutor {
         }
 
         try {
+            // P4：审批检查（require-approval-for 列表内的命令需 OP 批准）
+            if (cmd.equals("op") || cmd.equals("deop") || cmd.equals("ban") || cmd.equals("kick") || cmd.equals("tp_all")) {
+                if (!plugin.getApprovalManager().requestApproval(aiPlayer, cmd)) {
+                    return new ExecutionResult(cmd, false, "审批被拒绝");
+                }
+            }
             switch (cmd) {
                 case "walk" -> handleWalk(aiPlayer, args);
                 case "walk_dir" -> handleWalkDir(aiPlayer, args);
@@ -203,6 +237,27 @@ public class CommandExecutor {
                 case "combo" -> handleCombo(entity, args);
                 case "emote" -> handleEmote(entity, args);
                 case "strategy" -> handleStrategy(aiPlayer, args);
+                // P3：查询命令（返回 String，结果回流给 AIPlayer 下一轮注入）
+                case "query_players" -> {
+                    String result = handleQueryPlayers(entity, args);
+                    aiPlayer.setLastQueryResult(result);
+                }
+                case "query_nearby" -> {
+                    String result = handleQueryNearby(entity, args);
+                    aiPlayer.setLastQueryResult(result);
+                }
+                case "query_inventory" -> {
+                    String result = handleQueryInventory(entity, args);
+                    aiPlayer.setLastQueryResult(result);
+                }
+                case "query_block" -> {
+                    String result = handleQueryBlock(entity, args);
+                    aiPlayer.setLastQueryResult(result);
+                }
+                case "query_player" -> {
+                    String result = handleQueryPlayer(entity, args);
+                    aiPlayer.setLastQueryResult(result);
+                }
                 // P4：服务器级控制命令（受 allow-op-commands 控制）
                 case "op" -> handleOp(entity, args);
                 case "deop" -> handleDeop(entity, args);
@@ -222,6 +277,30 @@ public class CommandExecutor {
     }
 
     /**
+     * 兼容 1.21+ 新 Attribute API：通过 Registry 按名取 Attribute，避免直接引用已移除的 GENERIC_* 常量。
+     */
+    private org.bukkit.attribute.Attribute resolveAttribute(String key) {
+        try {
+            return org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft(key));
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 读取实体真实 maxHealth，失败回退 20.0 */
+    private double readMaxHealth(org.bukkit.entity.LivingEntity entity) {
+        try {
+            org.bukkit.attribute.Attribute attr = resolveAttribute("max_health");
+            if (attr != null) {
+                var inst = entity.getAttribute(attr);
+                if (inst != null) return inst.getValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return 20.0;
+    }
+
+    /**
      * 反射扫描本类所有带 {@link AICommand} 注解的方法，按 category 分组生成命令文档。
      * 文档格式与原 config.yml 中的硬编码命令清单保持一致，便于直接注入 system prompt。
      */
@@ -235,7 +314,7 @@ public class CommandExecutor {
 
         // 预定义 category 顺序，保证文档可读性
         List<String> categoryOrder = List.of(
-                "移动", "视角", "方块", "战斗", "物品", "聊天", "姿态", "动作", "自身状态", "OP", "策略", "其他"
+                "查询", "移动", "视角", "方块", "战斗", "物品", "聊天", "姿态", "动作", "自身状态", "OP", "策略", "其他"
         );
         Map<String, List<AICommand>> grouped = new LinkedHashMap<>();
         for (String cat : categoryOrder) grouped.put(cat, new ArrayList<>());
@@ -382,7 +461,7 @@ public class CommandExecutor {
             double minDist = Double.MAX_VALUE;
             for (Entity e : entity.getNearbyEntities(10, 10, 10)) {
                 if (e instanceof org.bukkit.entity.Vehicle v) {
-                    double d = e.getLocation().distance(entity.getLocation());
+                    double d = LocationUtil.safeDistance(e.getLocation(), entity.getLocation());
                     if (d < minDist) {
                         minDist = d;
                         mount = e;
@@ -441,7 +520,9 @@ public class CommandExecutor {
     /** teleport_player <玩家名> <x> <y> <z> —— 把玩家传送到坐标（OP 用，安全） */
     @AICommand(name = "teleport_player", desc = "把玩家传送到坐标", args = "玩家名 x y z", category = "OP", op = true)
     private void handleTeleportPlayer(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 4) return;
         Player target = Bukkit.getPlayerExact(args[0]);
         if (target == null) return;
@@ -469,11 +550,17 @@ public class CommandExecutor {
     /** set_health <数值> —— 设置血量（需要 OP 权限） */
     @AICommand(name = "set_health", desc = "设置血量", args = "数值", category = "OP", op = true)
     private void handleSetHealth(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (entity.isDead()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         try {
-            double h = Math.min(20, Math.max(0, Double.parseDouble(args[0])));
-            entity.setHealth(h);
+            double val = Double.parseDouble(args[0]);
+            if (Double.isNaN(val) || Double.isInfinite(val)) return;
+            double maxHealth = readMaxHealth(entity);
+            double finalVal = Math.min(maxHealth, Math.max(0, val));
+            entity.setHealth(finalVal);
         } catch (NumberFormatException ignored) {
         }
     }
@@ -481,7 +568,9 @@ public class CommandExecutor {
     /** set_food <数值> —— 设置饱食度（需要 OP 权限） */
     @AICommand(name = "set_food", desc = "设置饱食度", args = "数值", category = "OP", op = true)
     private void handleSetFood(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         try {
             int f = Math.min(20, Math.max(0, Integer.parseInt(args[0])));
@@ -493,7 +582,9 @@ public class CommandExecutor {
     /** weather <sun|rain|storm> —— 改变天气（需要 OP 权限） */
     @AICommand(name = "weather", desc = "改变天气", args = "sun|rain|storm", category = "OP", op = true)
     private void handleWeather(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         String w = args[0].toLowerCase();
         switch (w) {
@@ -515,7 +606,9 @@ public class CommandExecutor {
     /** time <day|night|dawn|dusk|数值> —— 改变时间（需要 OP 权限） */
     @AICommand(name = "time", desc = "改变时间", args = "day|night|dawn|dusk|数值", category = "OP", op = true)
     private void handleTime(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         String t = args[0].toLowerCase();
         long ticks = switch (t) {
@@ -699,7 +792,7 @@ public class CommandExecutor {
             double minDist = Double.MAX_VALUE;
             for (Entity e : entity.getNearbyEntities(radius, radius, radius)) {
                 if (e instanceof LivingEntity && !(e instanceof Player)) {
-                    double d = e.getLocation().distance(entity.getLocation());
+                    double d = LocationUtil.safeDistance(e.getLocation(), entity.getLocation());
                     if (d < minDist) {
                         minDist = d;
                         target = (LivingEntity) e;
@@ -792,8 +885,7 @@ public class CommandExecutor {
     private void handleCmd(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         if (!plugin.getConfigManager().isAllowOpCommands()) {
-            plugin.getLogger().warning("AI 尝试执行服务器命令，但已被配置禁用: " + String.join(" ", args));
-            return;
+            throw new RuntimeException("OP 命令已被禁用");
         }
         String fullCmd = String.join(" ", args);
         // 以控制台身份执行
@@ -932,13 +1024,16 @@ public class CommandExecutor {
     /** heal [数值] —— 恢复血量，默认 20 */
     @AICommand(name = "heal", desc = "恢复血量（默认 20）", args = "数值", category = "自身状态")
     private void handleHeal(Player entity, String[] args) {
+        if (entity.isDead()) return;
         double amount = args.length >= 1 ? safeParseDouble(args[0], 20) : 20;
-        entity.setHealth(Math.min(20, entity.getHealth() + amount));
+        double maxHealth = readMaxHealth(entity);
+        entity.setHealth(Math.min(maxHealth, entity.getHealth() + amount));
     }
 
     /** feed [数值] —— 恢复饱食度，默认 20 */
     @AICommand(name = "feed", desc = "恢复饱食度（默认 20）", args = "数值", category = "自身状态")
     private void handleFeed(Player entity, String[] args) {
+        if (entity.isDead()) return;
         int amount = args.length >= 1 ? safeParse(args[0], 20) : 20;
         entity.setFoodLevel(Math.min(20, entity.getFoodLevel() + amount));
     }
@@ -957,16 +1052,23 @@ public class CommandExecutor {
     /** fly <true|false> —— 开关飞行 */
     @AICommand(name = "fly", desc = "开关飞行", args = "true|false", category = "自身状态")
     private void handleFly(Player entity, String[] args) {
-        boolean fly = args.length < 1 || Boolean.parseBoolean(args[0]);
-        entity.setAllowFlight(fly);
-        entity.setFlying(fly);
+        try {
+            if (!entity.getGameMode().equals(org.bukkit.GameMode.CREATIVE)
+                && !entity.getGameMode().equals(org.bukkit.GameMode.SPECTATOR)) {
+                entity.setGameMode(org.bukkit.GameMode.CREATIVE);
+            }
+            entity.setAllowFlight(true);
+            entity.setFlying(true);
+        } catch (IllegalStateException e) {
+            plugin.getLogger().warning("handleFly 失败: " + e.getMessage());
+        }
     }
 
     /** ignite [秒数] —— 着火 */
     @AICommand(name = "ignite", desc = "自燃（默认 5 秒）", args = "秒数", category = "自身状态")
     private void handleIgnite(Player entity, String[] args) {
         int seconds = args.length >= 1 ? safeParse(args[0], 5) : 5;
-        entity.setFireTicks(seconds * 20);
+        entity.setFireTicks(Math.min(seconds, 3600) * 20);
     }
 
     /** extinguish —— 灭火 */
@@ -981,6 +1083,9 @@ public class CommandExecutor {
         Player target = entity;
         if (args.length >= 1 && !args[0].equalsIgnoreCase("self")) {
             target = Bukkit.getPlayerExact(args[0]);
+            if (target == null) {
+                throw new RuntimeException("玩家 " + args[0] + " 不在线");
+            }
         }
         if (target != null) {
             target.getWorld().strikeLightning(target.getLocation());
@@ -1102,7 +1207,7 @@ public class CommandExecutor {
             int count = 0;
             @Override
             public void run() {
-                if (count >= times || !entity.isValid() || !target.isValid() || target.isDead()) {
+                if (count >= times || !entity.isValid() || !target.isValid() || !target.isOnline() || target.isDead()) {
                     cancel();
                     return;
                 }
@@ -1143,12 +1248,126 @@ public class CommandExecutor {
         plugin.getLogger().info("策略执行: " + result);
     }
 
+    // ===== P3：查询命令（返回 String，结果回流给 AIPlayer 下一轮注入） =====
+
+    /** 查询所有在线玩家（名字/坐标/血量/装备摘要） */
+    @AICommand(name = "query_players", desc = "查询所有在线玩家（名字/坐标/血量/装备）", category = "查询")
+    private String handleQueryPlayers(Player entity, String[] args) {
+        StringBuilder sb = new StringBuilder("在线玩家：\n");
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (p.equals(entity)) continue;  // 跳过自己
+            sb.append("- ").append(p.getName())
+              .append("(x=").append((int) p.getLocation().getX())
+              .append(",y=").append((int) p.getLocation().getY())
+              .append(",z=").append((int) p.getLocation().getZ())
+              .append(",health=").append((int) p.getHealth())
+              .append(",world=").append(p.getWorld().getName())
+              .append(")\n");
+        }
+        return sb.toString();
+    }
+
+    /** 查询附近实体与方块（半径由参数指定，默认 10） */
+    @AICommand(name = "query_nearby", desc = "查询附近实体与方块", args = "[radius]", category = "查询")
+    private String handleQueryNearby(Player entity, String[] args) {
+        int radius = 10;
+        if (args.length >= 1) {
+            try { radius = Math.min(Integer.parseInt(args[0]), 50); } catch (NumberFormatException ignored) {}
+        }
+        StringBuilder sb = new StringBuilder("附近 ").append(radius).append(" 格内：\n");
+        sb.append("实体：\n");
+        int count = 0;
+        for (Entity e : entity.getNearbyEntities(radius, radius, radius)) {
+            if (count++ >= 20) break;
+            sb.append("- ").append(e.getName()).append("(").append(e.getType()).append(")")
+              .append(" 距离 ").append((int) LocationUtil.safeDistance(e.getLocation(), entity.getLocation())).append("\n");
+        }
+        sb.append("方块：\n");
+        count = 0;
+        for (int dx = -radius; dx <= radius && count < 15; dx += 2) {
+            for (int dy = -2; dy <= 2 && count < 15; dy++) {
+                for (int dz = -radius; dz <= radius && count < 15; dz += 2) {
+                    org.bukkit.block.Block b = entity.getWorld().getBlockAt(
+                        entity.getLocation().getBlockX() + dx,
+                        entity.getLocation().getBlockY() + dy,
+                        entity.getLocation().getBlockZ() + dz);
+                    if (!b.getType().isAir()) {
+                        sb.append("- ").append(b.getType()).append(" at (")
+                          .append(b.getX()).append(",").append(b.getY()).append(",").append(b.getZ()).append(")\n");
+                        count++;
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 查询自己背包 */
+    @AICommand(name = "query_inventory", desc = "查询自己背包内容", category = "查询")
+    private String handleQueryInventory(Player entity, String[] args) {
+        StringBuilder sb = new StringBuilder("背包内容：\n");
+        org.bukkit.inventory.PlayerInventory inv = entity.getInventory();
+        ItemStack[] items = inv.getContents();
+        int count = 0;
+        for (int i = 0; i < items.length && count < 30; i++) {
+            ItemStack item = items[i];
+            if (item != null && !item.getType().isAir()) {
+                sb.append("- 槽").append(i).append(": ").append(item.getType())
+                  .append(" x").append(item.getAmount()).append("\n");
+                count++;
+            }
+        }
+        if (count == 0) sb.append("（背包为空）\n");
+        return sb.toString();
+    }
+
+    /** 查询指定坐标方块 */
+    @AICommand(name = "query_block", desc = "查询指定坐标方块类型", args = "<x> <y> <z>", category = "查询")
+    private String handleQueryBlock(Player entity, String[] args) {
+        if (args.length < 3) return "用法：query_block <x> <y> <z>";
+        try {
+            int x = Integer.parseInt(args[0]);
+            int y = Integer.parseInt(args[1]);
+            int z = Integer.parseInt(args[2]);
+            org.bukkit.block.Block b = entity.getWorld().getBlockAt(x, y, z);
+            return "方块 (" + x + "," + y + "," + z + ") = " + b.getType();
+        } catch (NumberFormatException e) {
+            return "坐标必须是整数";
+        }
+    }
+
+    /** 查询指定玩家状态 */
+    @AICommand(name = "query_player", desc = "查询指定玩家状态", args = "<玩家名>", category = "查询")
+    private String handleQueryPlayer(Player entity, String[] args) {
+        if (args.length < 1) return "用法：query_player <玩家名>";
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null) return "玩家 " + args[0] + " 不在线";
+        StringBuilder sb = new StringBuilder("玩家 ").append(target.getName()).append(" 状态：\n");
+        sb.append("- 位置：(").append((int) target.getLocation().getX()).append(",")
+          .append((int) target.getLocation().getY()).append(",")
+          .append((int) target.getLocation().getZ()).append(") @ ")
+          .append(target.getWorld().getName()).append("\n");
+        sb.append("- 血量：").append((int) target.getHealth()).append("/20\n");
+        sb.append("- 食物：").append(target.getFoodLevel()).append("/20\n");
+        sb.append("- 游戏模式：").append(target.getGameMode()).append("\n");
+        sb.append("- 装备：");
+        org.bukkit.inventory.EntityEquipment eq = target.getEquipment();
+        if (eq != null) {
+            sb.append("手持=").append(eq.getItemInMainHand().getType())
+              .append(" 头盔=").append(eq.getHelmet() != null ? eq.getHelmet().getType() : "无")
+              .append(" 胸甲=").append(eq.getChestplate() != null ? eq.getChestplate().getType() : "无");
+        }
+        return sb.toString();
+    }
+
     // ===== P4：服务器级控制命令（均受 allow-op-commands 控制，以控制台身份执行） =====
 
     /** op <玩家名> —— 给玩家 OP 权限 */
     @AICommand(name = "op", desc = "给玩家 OP 权限", args = "玩家名", op = true, category = "OP")
     private void handleOp(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "op " + args[0]);
     }
@@ -1156,7 +1375,9 @@ public class CommandExecutor {
     /** deop <玩家名> —— 取消玩家 OP 权限 */
     @AICommand(name = "deop", desc = "取消玩家 OP 权限", args = "玩家名", op = true, category = "OP")
     private void handleDeop(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "deop " + args[0]);
     }
@@ -1164,7 +1385,9 @@ public class CommandExecutor {
     /** ban <玩家名> [原因] —— 封禁玩家 */
     @AICommand(name = "ban", desc = "封禁玩家", args = "玩家名 [原因]", op = true, category = "OP")
     private void handleBan(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         StringBuilder cmd = new StringBuilder("ban " + args[0]);
         if (args.length > 1) {
@@ -1181,7 +1404,9 @@ public class CommandExecutor {
     /** kick <玩家名> [原因] —— 踢出玩家 */
     @AICommand(name = "kick", desc = "踢出玩家", args = "玩家名 [原因]", op = true, category = "OP")
     private void handleKick(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 1) return;
         StringBuilder cmd = new StringBuilder("kick " + args[0]);
         if (args.length > 1) {
@@ -1198,7 +1423,9 @@ public class CommandExecutor {
     /** tp_all —— 把所有在线玩家传送到 AI 位置 */
     @AICommand(name = "tp_all", desc = "把所有玩家传送到 AI 位置", op = true, category = "OP")
     private void handleTpAll(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         Location loc = entity.getLocation();
         for (Player online : Bukkit.getOnlinePlayers()) {
             if (online.equals(entity)) continue;
@@ -1209,7 +1436,9 @@ public class CommandExecutor {
     /** gamemode_player <玩家名> <survival|creative|adventure|spectator> —— 设置指定玩家的游戏模式 */
     @AICommand(name = "gamemode_player", desc = "设置指定玩家的游戏模式", args = "玩家名 模式", op = true, category = "OP")
     private void handleGamemodePlayer(Player entity, String[] args) {
-        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (args.length < 2) return;
         String playerName = args[0];
         String mode = args[1].toLowerCase();

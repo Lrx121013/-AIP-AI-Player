@@ -79,6 +79,32 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             case "profile" -> handleProfile(sender, args);
             // P4 新增子命令
             case "memory" -> handleMemory(sender, args);
+            case "approve" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("用法：/aip approve <id>");
+                    return true;
+                }
+                if (!(sender instanceof Player)) {
+                    sender.sendMessage("§c只有玩家可以审批");
+                    return true;
+                }
+                boolean ok = plugin.getApprovalManager().approve(args[1], (Player) sender);
+                sender.sendMessage(ok ? "§a已批准" : "§c找不到该审批 ID 或已处理");
+                return true;
+            }
+            case "reject" -> {
+                if (args.length < 2) {
+                    sender.sendMessage("用法：/aip reject <id>");
+                    return true;
+                }
+                if (!(sender instanceof Player)) {
+                    sender.sendMessage("§c只有玩家可以审批");
+                    return true;
+                }
+                boolean ok = plugin.getApprovalManager().reject(args[1], (Player) sender);
+                sender.sendMessage(ok ? "§c已拒绝" : "§c找不到该审批 ID 或已处理");
+                return true;
+            }
             default -> sendHelp(sender);
         }
         return true;
@@ -155,7 +181,19 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§c已存在同名 AI 玩家: " + name);
             return;
         }
-        AIPlayer aiPlayer = plugin.getAiPlayerManager().spawn(name, spawner);
+        AIPlayer aiPlayer;
+        try {
+            aiPlayer = plugin.getAiPlayerManager().spawn(name, spawner);
+        } catch (RuntimeException e) {
+            sender.sendMessage("§c生成 AI 玩家失败：" + e.getMessage());
+            plugin.getLogger().warning("spawn 失败: " + e.getMessage());
+            e.printStackTrace();
+            return;
+        }
+        if (aiPlayer == null) {
+            sender.sendMessage("§cAI 玩家已存在或生成失败");
+            return;
+        }
         // 首次激活：发送初始系统提示给 AI
         if (!aiPlayer.isActivated()) {
             activateAI(aiPlayer);
@@ -683,12 +721,19 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§7" + args[1] + " 还活着，无需复活。");
             return;
         }
-        AIPlayer revived = plugin.getAiPlayerManager().revive(args[1]);
-        if (revived == null) {
-            sender.sendMessage("§c复活失败：无法确定复活位置或后端不可用。");
+        AIPlayer revived;
+        try {
+            revived = plugin.getAiPlayerManager().revive(args[1]);
+        } catch (RuntimeException e) {
+            sender.sendMessage("§c复活 AI 玩家失败：" + e.getMessage());
+            plugin.getLogger().warning("revive 失败: " + e.getMessage());
             return;
         }
-        sender.sendMessage("§a已复活 " + args[1] + "（保留了对话历史、个性、情绪、关系等记忆）");
+        if (revived == null) {
+            sender.sendMessage("§c找不到 AI 玩家或实体仍存活");
+            return;
+        }
+        sender.sendMessage("§a已复活 AI 玩家: §e" + args[1]);
     }
 
     // ===== 功能 8: AI 日程作息 =====
@@ -1082,6 +1127,14 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 0) return java.util.Collections.emptyList();
+        // P4：approve/reject 补全 pending approval IDs
+        if (args.length == 2 && (args[0].equalsIgnoreCase("approve") || args[0].equalsIgnoreCase("reject"))) {
+            String prefix = args[1].toLowerCase();
+            return plugin.getApprovalManager().getPending().keySet().stream()
+                    .filter(id -> id.toLowerCase().startsWith(prefix))
+                    .toList();
+        }
         List<String> result = new ArrayList<>();
         var aiNames = plugin.getAiPlayerManager().getAll().stream()
                 .map(AIPlayer::getName).collect(Collectors.toList());
@@ -1089,7 +1142,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin",
                     "history", "personality", "team", "task", "relation", "revive",
-                    "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory");
+                    "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory",
+                    "approve", "reject");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")

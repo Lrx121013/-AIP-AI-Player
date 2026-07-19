@@ -56,6 +56,10 @@ public class ChatListener implements Listener {
                         try {
                             ConversationManager cm = new ConversationManager(plugin, aiPlayer);
                             String reply = cm.chat(prompt, null);
+                            if (reply == null) {
+                                // busy：本轮已被跳过（自主/激活场景无玩家提示）
+                                return;
+                            }
                             final String finalReply = reply;
                             Bukkit.getScheduler().runTask(plugin, () -> {
                                 plugin.getCommandExecutor().execute(aiPlayer, finalReply);
@@ -80,6 +84,10 @@ public class ChatListener implements Listener {
                     try {
                         ConversationManager cm = new ConversationManager(plugin, aiPlayer);
                         String reply = cm.chat(prompt, sender);
+                        if (reply == null) {
+                            // busy：chat 内部已发送"正在思考…"提示，直接返回
+                            return;
+                        }
                         // 命令必须在主线程执行
                         final String finalReply = reply;
                         Bukkit.getScheduler().runTask(plugin, () -> {

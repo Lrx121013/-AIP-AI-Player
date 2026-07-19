@@ -185,7 +185,9 @@ public class GuiManager {
     public void handleClick(InventoryClickEvent event) {
         Player player = (Player) event.getWhoClicked();
         ItemStack clicked = event.getCurrentItem();
-        if (clicked == null || clicked.getType() == Material.AIR) return;
+        if (clicked == null || clicked.getType().isAir() || !clicked.hasItemMeta()) {
+            return;
+        }
 
         event.setCancelled(true);
 
@@ -284,6 +286,15 @@ public class GuiManager {
             player.closeInventory();
             return;
         }
+        // 重新从 manager 拿，确认未被 /aip remove
+        AIPlayer current = plugin.getAiPlayerManager().get(ai.getName());
+        if (current == null) {
+            player.sendMessage("§c该 AI 已被移除");
+            player.closeInventory();
+            selectedAi.remove(player.getUniqueId());
+            return;
+        }
+        ai = current;
         String aiName = ai.getName();
 
         switch (name) {
@@ -332,6 +343,15 @@ public class GuiManager {
             player.closeInventory();
             return;
         }
+        // 重新从 manager 拿，确认未被 /aip remove
+        AIPlayer current = plugin.getAiPlayerManager().get(ai.getName());
+        if (current == null) {
+            player.sendMessage("§c该 AI 已被移除");
+            player.closeInventory();
+            selectedAi.remove(player.getUniqueId());
+            return;
+        }
+        ai = current;
         String aiName = ai.getName();
 
         if (name.equals("通过 URL 设置")) {
