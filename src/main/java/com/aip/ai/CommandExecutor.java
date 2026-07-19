@@ -11,7 +11,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Villager;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
@@ -85,7 +84,7 @@ public class CommandExecutor {
         String[] args = new String[parts.length - 1];
         System.arraycopy(parts, 1, args, 0, args.length);
 
-        Villager entity = aiPlayer.getEntity();
+        Player entity = aiPlayer.getEntity();
         if (entity == null || !entity.isValid()) {
             plugin.getLogger().warning("AI 实体不存在: " + aiPlayer.getName());
             return;
@@ -109,7 +108,7 @@ public class CommandExecutor {
         }
     }
 
-    private void handleWalk(Villager entity, String[] args) {
+    private void handleWalk(Player entity, String[] args) {
         if (args.length < 3) return;
         try {
             double x = Double.parseDouble(args[0]);
@@ -121,7 +120,7 @@ public class CommandExecutor {
         }
     }
 
-    private void handleWalkDir(Villager entity, String[] args) {
+    private void handleWalkDir(Player entity, String[] args) {
         if (args.length < 2) return;
         String dir = args[0].toLowerCase();
         double dist;
@@ -147,7 +146,7 @@ public class CommandExecutor {
         walkTo(entity, target);
     }
 
-    private void walkTo(Villager entity, Location target) {
+    private void walkTo(Player entity, Location target) {
         // 简单模拟"行走"：分多帧小步移动到目标点
         Location start = entity.getLocation();
         double totalDist = start.distance(target);
@@ -183,7 +182,7 @@ public class CommandExecutor {
         aiPlayer.setFollowing(null);
     }
 
-    private void handleBreak(Villager entity, String[] args) {
+    private void handleBreak(Player entity, String[] args) {
         if (args.length < 3) return;
         try {
             int x = Integer.parseInt(args[0]);
@@ -198,7 +197,7 @@ public class CommandExecutor {
         }
     }
 
-    private void handlePlace(Villager entity, String[] args) {
+    private void handlePlace(Player entity, String[] args) {
         if (args.length < 4) return;
         try {
             int x = Integer.parseInt(args[0]);
@@ -215,7 +214,7 @@ public class CommandExecutor {
         }
     }
 
-    private void handleAttack(Villager entity, String[] args) {
+    private void handleAttack(Player entity, String[] args) {
         if (args.length < 1) return;
         String targetName = String.join(" ", args);
         LivingEntity target = null;
@@ -224,7 +223,7 @@ public class CommandExecutor {
             double radius = plugin.getConfigManager().getEntityScanRadius();
             double minDist = Double.MAX_VALUE;
             for (Entity e : entity.getNearbyEntities(radius, radius, radius)) {
-                if (e instanceof LivingEntity && !(e instanceof Player) && !(e instanceof Villager)) {
+                if (e instanceof LivingEntity && !(e instanceof Player)) {
                     double d = e.getLocation().distance(entity.getLocation());
                     if (d < minDist) {
                         minDist = d;
@@ -254,13 +253,13 @@ public class CommandExecutor {
         target.damage(damage, entity);
     }
 
-    private void handleJump(Villager entity) {
+    private void handleJump(Player entity) {
         Vector v = entity.getVelocity();
         v.setY(0.5);
         entity.setVelocity(v);
     }
 
-    private void handleLook(Villager entity, String[] args) {
+    private void handleLook(Player entity, String[] args) {
         if (args.length < 1) return;
         String dir = args[0].toLowerCase();
         Location loc = entity.getLocation();
@@ -296,7 +295,7 @@ public class CommandExecutor {
         Bukkit.dispatchCommand(console, fullCmd);
     }
 
-    private void handleEquip(Villager entity, String[] args) {
+    private void handleEquip(Player entity, String[] args) {
         if (args.length < 2) return;
         String slot = args[0].toLowerCase();
         Material mat = Material.matchMaterial(args[1].toUpperCase());
@@ -317,7 +316,7 @@ public class CommandExecutor {
         }
     }
 
-    private void handleDrop(Villager entity, String[] args) {
+    private void handleDrop(Player entity, String[] args) {
         if (args.length < 1) return;
         String slot = args[0].toLowerCase();
         EntityEquipment eq = entity.getEquipment();
