@@ -146,27 +146,32 @@ public class AIPlayerManager {
     }
 
     private void triggerAutonomousAction(AIPlayer aiPlayer) {
-        // 异步触发：让 AI 自主决策
+        // 本方法由 runTaskTimer 调用，已在主线程
         if (!plugin.getConfigManager().isConfigured()) return;
         Villager v = aiPlayer.getEntity();
         if (v == null || !v.isValid()) return;
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            try {
-                GameDataCollector collector = plugin.getGameDataCollector();
-                String gameData = collector.collect(aiPlayer);
-                String prompt = "（自主思考）当前游戏数据如下：\n" + gameData
-                        + "\n请基于当前情况自主决定下一步操作（保持简短，1-2 个动作即可）。";
-                ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                String reply = cm.chat(prompt, null);
-                // 命令执行必须在主线程
-                final String finalReply = reply;
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    plugin.getCommandExecutor().execute(aiPlayer, finalReply);
-                });
-            } catch (Exception e) {
-                plugin.getLogger().warning("AI 自主活动失败: " + e.getMessage());
-            }
-        });
+        // 先在主线程采集游戏数据，再异步调用 LLM（避免异步访问实体）
+        try {
+            GameDataCollector collector = plugin.getGameDataCollector();
+            String gameData = collector.collect(aiPlayer);
+            final String prompt = "（自主思考）当前游戏数据如下：\n" + gameData
+                    + "\n请基于当前情况自主决定下一步操作（保持简短，1-2 个动作即可）。";
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                    String reply = cm.chat(prompt, null);
+                    // 命令执行必须在主线程
+                    final String finalReply = reply;
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                    });
+                } catch (Exception e) {
+                    plugin.getLogger().warning("AI 自主活动失败: " + e.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            plugin.getLogger().warning("AI 自主活动采集数据失败: " + e.getMessage());
+        }
     }
 }
