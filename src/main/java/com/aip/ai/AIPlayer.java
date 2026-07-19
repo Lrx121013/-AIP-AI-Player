@@ -135,7 +135,23 @@ public class AIPlayer {
                 }
                 Location targetLoc = target.getLocation();
                 Location myLoc = v.getLocation();
-                if (myLoc.distance(targetLoc) > 3) {
+                double dist;
+                try {
+                    dist = myLoc.distance(targetLoc);
+                } catch (Exception e) {
+                    return;
+                }
+                // 距离 > 3 才需要追
+                if (dist <= 3) {
+                    // 已靠近，取消寻路
+                    NpcHelper.cancelNavigation(v);
+                    return;
+                }
+                // 优先用后端寻路
+                boolean navigated = NpcHelper.navigateTo(v, targetLoc,
+                        plugin.getConfigManager().getMoveSpeed());
+                if (!navigated) {
+                    // 回退：分帧 teleport
                     Location dir = targetLoc.clone().subtract(myLoc).toVector().normalize()
                             .multiply(plugin.getConfigManager().getMoveSpeed())
                             .toLocation(myLoc.getWorld());

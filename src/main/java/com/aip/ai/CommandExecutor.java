@@ -114,7 +114,297 @@ public class CommandExecutor {
             case "swing" -> plugin.getNpcAnimator().swingArm(entity);
             case "look_at_player" -> handleLookAtPlayer(entity, args);
             case "approach" -> handleApproach(entity, args);
+            // 新增动作
+            case "face" -> handleFace(entity, args);
+            case "pickup" -> handlePickup(entity);
+            case "pickup_all" -> handlePickupAll(entity);
+            case "use_item" -> handleUseItem(entity);
+            case "interact" -> handleInteractBlock(entity, args);
+            case "mount" -> handleMount(entity, args);
+            case "dismount" -> entity.leaveVehicle();
+            case "eat" -> handleEat(entity);
+            case "throw_item" -> handleThrowItem(entity);
+            case "give_random" -> handleGiveRandom(entity, args);
+            case "teleport_player" -> handleTeleportPlayer(entity, args);
+            case "respawn" -> handleRespawn(entity);
+            case "set_health" -> handleSetHealth(entity, args);
+            case "set_food" -> handleSetFood(entity, args);
+            case "weather" -> handleWeather(entity, args);
+            case "time" -> handleTime(entity, args);
+            case "broadcast" -> handleBroadcast(aiPlayer, args);
             default -> plugin.getLogger().warning("未知 AI 命令: " + cmd);
+        }
+    }
+
+    /** face <x> <y> <z> 或 face_player <玩家名> —— 朝向某点或某玩家 */
+    private void handleFace(Player entity, String[] args) {
+        if (args.length >= 3) {
+            try {
+                double x = Double.parseDouble(args[0]);
+                double y = Double.parseDouble(args[1]);
+                double z = Double.parseDouble(args[2]);
+                Location target = new Location(entity.getWorld(), x, y, z);
+                NpcHelper.faceLocation(entity, target);
+                return;
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("player")) {
+            // face player <name>
+            if (args.length >= 2) {
+                Player target = Bukkit.getPlayerExact(args[1]);
+                if (target != null) {
+                    NpcHelper.faceLocation(entity, target.getLocation());
+                }
+            }
+        }
+    }
+
+    /** 捡起附近 5 格内的所有掉落物 */
+    private void handlePickup(Player entity) {
+        double radius = 5.0;
+        for (Entity e : entity.getNearbyEntities(radius, radius, radius)) {
+            if (e instanceof org.bukkit.entity.Item item) {
+                // 直接把物品加入背包
+                org.bukkit.inventory.ItemStack stack = item.getItemStack();
+                java.util.HashMap<Integer, org.bukkit.inventory.ItemStack> overflow =
+                        entity.getInventory().addItem(stack);
+                if (overflow.isEmpty()) {
+                    e.remove();
+                } else {
+                    // 装不下，更新剩余数量
+                    int remaining = overflow.values().stream().mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum();
+                    item.getItemStack().setAmount(remaining);
+                }
+            }
+        }
+    }
+
+    /** 捡起附近 10 格内所有掉落物 */
+    private void handlePickupAll(Player entity) {
+        for (Entity e : entity.getNearbyEntities(10, 10, 10)) {
+            if (e instanceof org.bukkit.entity.Item item) {
+                org.bukkit.inventory.ItemStack stack = item.getItemStack();
+                java.util.HashMap<Integer, org.bukkit.inventory.ItemStack> overflow =
+                        entity.getInventory().addItem(stack);
+                if (overflow.isEmpty()) {
+                    e.remove();
+                } else {
+                    int remaining = overflow.values().stream().mapToInt(org.bukkit.inventory.ItemStack::getAmount).sum();
+                    item.getItemStack().setAmount(remaining);
+                }
+            }
+        }
+    }
+
+    /** 使用手持物（吃食物、喝药水等） */
+    private void handleUseItem(Player entity) {
+        org.bukkit.inventory.ItemStack hand = entity.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) return;
+        // 模拟：如果是食物，立即消耗并恢复饥饿
+        if (hand.getType().isEdible()) {
+            entity.setFoodLevel(Math.min(20, entity.getFoodLevel() + 5));
+            if (hand.getAmount() > 1) {
+                hand.setAmount(hand.getAmount() - 1);
+            } else {
+                entity.getInventory().setItemInMainHand(null);
+            }
+        }
+        // 药水等需要复杂逻辑，这里简化
+    }
+
+    /** interact <x> <y> <z> —— 与方块交互（开门、按按钮、开箱子等） */
+    private void handleInteractBlock(Player entity, String[] args) {
+        if (args.length < 3) return;
+        try {
+            int x = Integer.parseInt(args[0]);
+            int y = Integer.parseInt(args[1]);
+            int z = Integer.parseInt(args[2]);
+            Block b = entity.getWorld().getBlockAt(x, y, z);
+            // 简化：如果是门/按钮/拉杆，模拟红石信号
+            if (b.getType().name().endsWith("_DOOR") || b.getType().name().endsWith("_TRAPDOOR")
+                    || b.getType().name().endsWith("_FENCE_GATE")
+                    || b.getType().name().endsWith("_BUTTON") || b.getType() == Material.LEVER) {
+                // 用 BlockState 切换开关
+                org.bukkit.block.data.Openable openable =
+                        (org.bukkit.block.data.Openable) b.getBlockData();
+                openable.setOpen(!openable.isOpen());
+                b.setBlockData(openable);
+            }
+        } catch (NumberFormatException ignored) {
+        } catch (ClassCastException ignored) {
+            // 不是 Openable，忽略
+        }
+    }
+
+    /** mount <实体名|nearest> —— 骑乘附近实体（矿车、船、马等） */
+    private void handleMount(Player entity, String[] args) {
+        if (args.length < 1) return;
+        String target = args[0];
+        Entity mount = null;
+        if (target.equalsIgnoreCase("nearest")) {
+            double minDist = Double.MAX_VALUE;
+            for (Entity e : entity.getNearbyEntities(10, 10, 10)) {
+                if (e instanceof org.bukkit.entity.Vehicle v) {
+                    double d = e.getLocation().distance(entity.getLocation());
+                    if (d < minDist) {
+                        minDist = d;
+                        mount = e;
+                    }
+                }
+            }
+        } else {
+            for (Entity e : entity.getNearbyEntities(10, 10, 10)) {
+                if (e.getName().equalsIgnoreCase(target)) {
+                    mount = e;
+                    break;
+                }
+            }
+        }
+        if (mount != null) {
+            mount.addPassenger(entity);
+        }
+    }
+
+    /** eat —— 直接吃完手里食物并恢复饱食度 */
+    private void handleEat(Player entity) {
+        handleUseItem(entity);
+    }
+
+    /** throw_item —— 丢出主手物品（朝看的方向） */
+    private void handleThrowItem(Player entity) {
+        org.bukkit.inventory.ItemStack hand = entity.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) return;
+        org.bukkit.inventory.ItemStack toThrow = hand.clone();
+        // 留一份在手里
+        if (hand.getAmount() > 1) {
+            hand.setAmount(hand.getAmount() - 1);
+        } else {
+            entity.getInventory().setItemInMainHand(null);
+        }
+        Location loc = entity.getLocation();
+        loc.setY(loc.getY() + 1.5);
+        org.bukkit.entity.Item dropped = entity.getWorld().dropItem(loc, toThrow);
+        Vector dir = loc.getDirection().multiply(0.8);
+        dropped.setVelocity(dir);
+    }
+
+    /** give_random <物品类型> [数量] —— 给 AI 加物品（测试用，可视为捡到） */
+    private void handleGiveRandom(Player entity, String[] args) {
+        if (args.length < 1) return;
+        Material mat = Material.matchMaterial(args[0].toUpperCase());
+        if (mat == null) return;
+        int amount = args.length >= 2 ? Math.min(64, safeParse(args[1], 1)) : 1;
+        org.bukkit.inventory.ItemStack stack = new org.bukkit.inventory.ItemStack(mat, amount);
+        entity.getInventory().addItem(stack);
+    }
+
+    /** teleport_player <玩家名> <x> <y> <z> —— 把玩家传送到坐标（OP 用，安全） */
+    private void handleTeleportPlayer(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 4) return;
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null) return;
+        try {
+            double x = Double.parseDouble(args[1]);
+            double y = Double.parseDouble(args[2]);
+            double z = Double.parseDouble(args[3]);
+            Location loc = new Location(entity.getWorld(), x, y, z);
+            target.teleport(loc);
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    /** respawn —— 强制重生（如果死了） */
+    private void handleRespawn(Player entity) {
+        if (entity.isDead()) {
+            try {
+                entity.spigot().respawn();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /** set_health <数值> —— 设置血量（需要 OP 权限） */
+    private void handleSetHealth(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        try {
+            double h = Math.min(20, Math.max(0, Double.parseDouble(args[0])));
+            entity.setHealth(h);
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    /** set_food <数值> —— 设置饱食度（需要 OP 权限） */
+    private void handleSetFood(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        try {
+            int f = Math.min(20, Math.max(0, Integer.parseInt(args[0])));
+            entity.setFoodLevel(f);
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    /** weather <sun|rain|storm> —— 改变天气（需要 OP 权限） */
+    private void handleWeather(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        String w = args[0].toLowerCase();
+        switch (w) {
+            case "sun", "clear" -> {
+                entity.getWorld().setStorm(false);
+                entity.getWorld().setThundering(false);
+            }
+            case "rain" -> {
+                entity.getWorld().setStorm(true);
+                entity.getWorld().setThundering(false);
+            }
+            case "storm", "thunder" -> {
+                entity.getWorld().setStorm(true);
+                entity.getWorld().setThundering(true);
+            }
+        }
+    }
+
+    /** time <day|night|dawn|dusk|数值> —— 改变时间（需要 OP 权限） */
+    private void handleTime(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        String t = args[0].toLowerCase();
+        long ticks = switch (t) {
+            case "day" -> 1000L;
+            case "noon" -> 6000L;
+            case "dawn" -> 0L;
+            case "dusk" -> 12000L;
+            case "night" -> 13000L;
+            case "midnight" -> 18000L;
+            default -> {
+                try {
+                    yield Long.parseLong(t);
+                } catch (NumberFormatException e) {
+                    yield -1L;
+                }
+            }
+        };
+        if (ticks >= 0) {
+            entity.getWorld().setTime(ticks);
+        }
+    }
+
+    /** broadcast <消息> —— 服务器广播消息 */
+    private void handleBroadcast(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 1) return;
+        String msg = String.join(" ", args);
+        Bukkit.broadcastMessage("§e[" + aiPlayer.getName() + "] §f" + msg);
+    }
+
+    private int safeParse(String s, int def) {
+        try {
+            return Integer.parseInt(s);
+        } catch (Exception e) {
+            return def;
         }
     }
 
@@ -157,12 +447,21 @@ public class CommandExecutor {
     }
 
     private void walkTo(Player entity, Location target) {
-        // 简单模拟"行走"：分多帧小步移动到目标点
-        Location start = entity.getLocation();
-        double totalDist = start.distance(target);
-        if (totalDist < 0.5) return;
+        // 优先使用后端寻路（Citizens 的 A* 寻路会绕过障碍）
         double speed = plugin.getConfigManager().getMoveSpeed();
-        int steps = (int) Math.min(40, Math.ceil(totalDist / speed));
+        boolean navigated = NpcHelper.navigateTo(entity, target, speed);
+        if (navigated) return;
+
+        // 回退方案：分帧 teleport 模拟"行走"（NMS 后端）
+        Location start = entity.getLocation();
+        double totalDist;
+        try {
+            totalDist = start.distance(target);
+        } catch (Exception e) {
+            return;
+        }
+        if (totalDist < 0.5) return;
+        int steps = Math.max(1, (int) Math.min(60, Math.ceil(totalDist / speed)));
         Vector step = target.toVector().subtract(start.toVector()).multiply(1.0 / steps);
 
         new org.bukkit.scheduler.BukkitRunnable() {

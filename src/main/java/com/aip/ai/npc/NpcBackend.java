@@ -34,4 +34,46 @@ public interface NpcBackend {
 
     /** 更新 NPC 皮肤 */
     void updateSkin(Player npc, Object skinTexture);
+
+    /**
+     * 让 NPC 寻路走到指定位置
+     * <p>
+     * Citizens 后端用其内置 Navigator（A* 寻路，会绕过障碍）。
+     * NMS 后端用反射调用 ServerPlayer 的 moveNavigation 或退化为分帧 teleport。
+     *
+     * @param npc     NPC 实体
+     * @param target  目标位置
+     * @param speed   移动速度（1.0 = 普通速度）
+     * @return true=已下发寻路指令；false=后端不支持寻路，调用方需要回退到分帧 teleport
+     */
+    default boolean navigateTo(Player npc, Location target, double speed) {
+        return false;
+    }
+
+    /** 是否在寻路中 */
+    default boolean isNavigating(Player npc) {
+        return false;
+    }
+
+    /** 取消寻路 */
+    default void cancelNavigation(Player npc) {
+    }
+
+    /**
+     * 让 NPC 朝向某个位置（仅转头，不移动）
+     */
+    default void faceLocation(Player npc, Location target) {
+        // 默认实现：用 Bukkit 的 teleport 修改 yaw/pitch
+        Location loc = npc.getLocation().clone();
+        Location diff = target.clone().subtract(loc);
+        double dx = diff.getX();
+        double dz = diff.getZ();
+        double dy = diff.getY();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) (-Math.atan2(dx, dz) * 180.0 / Math.PI);
+        float pitch = (float) (-Math.atan2(dy, dist) * 180.0 / Math.PI);
+        loc.setYaw(yaw);
+        loc.setPitch(pitch);
+        npc.teleport(loc);
+    }
 }

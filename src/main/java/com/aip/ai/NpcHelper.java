@@ -86,6 +86,26 @@ public class NpcHelper {
         backend().updateSkin(npc, skinTexture);
     }
 
+    // ===== 寻路支持 =====
+
+    /** 让 NPC 寻路到指定位置（Citizens 后端用内置 A* 寻路）；返回 false=不支持，需要回退到 teleport */
+    public static boolean navigateTo(Player npc, Location target, double speed) {
+        return backend().navigateTo(npc, target, speed);
+    }
+
+    public static boolean isNavigating(Player npc) {
+        return backend().isNavigating(npc);
+    }
+
+    public static void cancelNavigation(Player npc) {
+        backend().cancelNavigation(npc);
+    }
+
+    /** 让 NPC 朝向某个位置（仅转头） */
+    public static void faceLocation(Player npc, Location target) {
+        backend().faceLocation(npc, target);
+    }
+
     // ===== 皮肤获取 =====
 
     /**
