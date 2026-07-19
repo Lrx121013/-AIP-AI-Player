@@ -105,22 +105,28 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
      */
     private void activateAI(AIPlayer aiPlayer) {
         aiPlayer.setActivated(true);
-        // 异步调用 LLM
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        // 先在主线程采集游戏数据，再异步调用 LLM（Bukkit.getEntity 必须在主线程）
+        Bukkit.getScheduler().runTask(plugin, () -> {
             try {
                 GameDataCollector collector = plugin.getGameDataCollector();
                 String gameData = collector.collect(aiPlayer);
-                String prompt = "（系统：你刚刚被召唤到这个世界，请简短自我介绍并说明你想做什么。"
+                final String prompt = "（系统：你刚刚被召唤到这个世界，请简短自我介绍并说明你想做什么。"
                         + "下面是当前游戏数据：）\n" + gameData;
-                ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                String reply = cm.chat(prompt, null);
-                // 在主线程执行命令
-                final String finalReply = reply;
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    try {
+                        ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                        String reply = cm.chat(prompt, null);
+                        // 在主线程执行命令
+                        final String finalReply = reply;
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                        });
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("激活 AI 失败: " + e.getMessage());
+                    }
                 });
             } catch (Exception e) {
-                plugin.getLogger().warning("激活 AI 失败: " + e.getMessage());
+                plugin.getLogger().warning("激活 AI 采集数据失败: " + e.getMessage());
             }
         });
     }
@@ -184,22 +190,28 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         }
 
         sender.sendMessage("§7你对 §e" + name + "§7 说: " + msg);
-        // 异步发送给 AI
+        // 先在主线程采集游戏数据，再异步调用 LLM（避免异步访问实体）
         final CommandSender finalSender = sender;
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        Bukkit.getScheduler().runTask(plugin, () -> {
             try {
                 GameDataCollector collector = plugin.getGameDataCollector();
                 String gameData = collector.collect(aiPlayer);
-                String prompt = msg + "\n\n（附当前游戏数据：）\n" + gameData;
-                ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                String reply = cm.chat(prompt, finalSender instanceof Player ? (Player) finalSender : null);
-                // 在主线程执行命令
-                final String finalReply = reply;
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                final String prompt = msg + "\n\n（附当前游戏数据：）\n" + gameData;
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    try {
+                        ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                        String reply = cm.chat(prompt, finalSender instanceof Player ? (Player) finalSender : null);
+                        // 在主线程执行命令
+                        final String finalReply = reply;
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                        });
+                    } catch (Exception e) {
+                        finalSender.sendMessage("§cAI 处理失败: " + e.getMessage());
+                    }
                 });
             } catch (Exception e) {
-                finalSender.sendMessage("§cAI 处理失败: " + e.getMessage());
+                finalSender.sendMessage("§c采集游戏数据失败: " + e.getMessage());
             }
         });
     }

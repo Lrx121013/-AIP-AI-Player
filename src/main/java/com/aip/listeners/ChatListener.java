@@ -45,39 +45,52 @@ public class ChatListener implements Listener {
         // 首次激活
         if (!aiPlayer.isActivated()) {
             aiPlayer.setActivated(true);
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            // 先在主线程采集游戏数据，再异步调用 LLM（Bukkit.getEntity 必须在主线程）
+            Bukkit.getScheduler().runTask(plugin, () -> {
                 try {
                     GameDataCollector collector = plugin.getGameDataCollector();
                     String gameData = collector.collect(aiPlayer);
-                    String prompt = "（系统：你刚刚被召唤到这个世界。请简短自我介绍并说明你想做什么。"
+                    final String prompt = "（系统：你刚刚被召唤到这个世界。请简短自我介绍并说明你想做什么。"
                             + "下面是当前游戏数据：）\n" + gameData;
-                    ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                    String reply = cm.chat(prompt, null);
-                    final String finalReply = reply;
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                    Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                        try {
+                            ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                            String reply = cm.chat(prompt, null);
+                            final String finalReply = reply;
+                            Bukkit.getScheduler().runTask(plugin, () -> {
+                                plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                            });
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("激活 AI 失败: " + e.getMessage());
+                        }
                     });
                 } catch (Exception e) {
-                    plugin.getLogger().warning("激活 AI 失败: " + e.getMessage());
+                    plugin.getLogger().warning("激活 AI 采集数据失败: " + e.getMessage());
                 }
             });
         }
 
-        // 异步处理：收集游戏数据 + 调用 LLM
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        // 先在主线程采集游戏数据，再异步调用 LLM（避免异步访问实体）
+        Bukkit.getScheduler().runTask(plugin, () -> {
             try {
                 GameDataCollector collector = plugin.getGameDataCollector();
                 String gameData = collector.collect(aiPlayer);
-                String prompt = content + "\n\n（附当前游戏数据：）\n" + gameData;
-                ConversationManager cm = new ConversationManager(plugin, aiPlayer);
-                String reply = cm.chat(prompt, sender);
-                // 命令必须在主线程执行
-                final String finalReply = reply;
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                final String prompt = content + "\n\n（附当前游戏数据：）\n" + gameData;
+                Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                    try {
+                        ConversationManager cm = new ConversationManager(plugin, aiPlayer);
+                        String reply = cm.chat(prompt, sender);
+                        // 命令必须在主线程执行
+                        final String finalReply = reply;
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            plugin.getCommandExecutor().execute(aiPlayer, finalReply);
+                        });
+                    } catch (Exception e) {
+                        sender.sendMessage("§c[AIP] AI 处理失败: " + e.getMessage());
+                    }
                 });
             } catch (Exception e) {
-                sender.sendMessage("§c[AIP] AI 处理失败: " + e.getMessage());
+                sender.sendMessage("§c[AIP] 采集游戏数据失败: " + e.getMessage());
             }
         });
     }
