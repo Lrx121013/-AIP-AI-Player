@@ -71,6 +71,12 @@ public class AIPlayerPlugin extends JavaPlugin {
             aiPlayerManager.startAutonomousTask();
         }
 
+        // 7. 服务器完全启动后重新检查 NPC 后端（防止 Citizens 比 AIPlayer 后 enable）
+        getServer().getScheduler().runTaskLater(this, () -> {
+            com.aip.ai.NpcHelper.recheckBackend();
+            getLogger().info("NPC 后端: " + com.aip.ai.NpcHelper.backendName());
+        }, 40L);  // 2 秒后
+
         getLogger().info("AI Player 插件已启用。使用 /aip spawn <名字> 来生成 AI 玩家。");
     }
 

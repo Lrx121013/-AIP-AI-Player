@@ -31,7 +31,14 @@ public class NpcHelper {
     private static final NpcBackend CITIZENS = new CitizensBackend();
     private static final NpcBackend NMS = new NmsBackend();
     private static NpcBackend backend;
+    private static Boolean warnedNoCitizens = false;
 
+    /**
+     * 选择后端：优先 Citizens，否则 NMS
+     * <p>
+     * 不缓存选择结果——这样即使 AIPlayer 比 Citizens 先 load（虽然 plugin.yml 里 softdepend
+     * 应该避免这种情况），第一次实际 spawn 时也能正确检测到 Citizens。
+     */
     private static NpcBackend backend() {
         if (backend != null) return backend;
         if (CITIZENS.isAvailable()) {
@@ -39,11 +46,20 @@ public class NpcHelper {
             Bukkit.getLogger().info("[AIPlayer] NPC 后端：Citizens（推荐）");
         } else if (NMS.isAvailable()) {
             backend = NMS;
-            Bukkit.getLogger().info("[AIPlayer] NPC 后端：NMS 反射（未检测到 Citizens，建议安装以获得更稳定的体验）");
+            if (!warnedNoCitizens) {
+                Bukkit.getLogger().info("[AIPlayer] NPC 后端：NMS 反射（未检测到 Citizens，建议安装以获得更稳定的体验）");
+                warnedNoCitizens = true;
+            }
         } else {
             throw new RuntimeException("没有可用的 NPC 后端！请安装 Citizens 或在 Paper 服务器上运行。");
         }
         return backend;
+    }
+
+    /** 重置后端选择（用于 Citizens 后启用时重新检测） */
+    public static void recheckBackend() {
+        backend = null;
+        warnedNoCitizens = false;
     }
 
     /** 当前使用的后端名称（"Citizens" 或 "NMS"） */
@@ -117,26 +133,23 @@ public class NpcHelper {
 
     /**
      * 从在线玩家复制皮肤纹理
+     * <p>
+     * 直接用 Paper 公开 API：PlayerProfile.getProperties() 返回 Set&lt;ProfileProperty&gt;，
+     * 不走任何反射，避免 Paper reflection-rewriter 拦截。
      *
      * @param player 目标玩家
-     * @return 皮肤纹理属性（Property 对象，若玩家无皮肤则返回 null）
+     * @return 皮肤纹理属性（com.mojang.authlib.properties.Property 实例，若玩家无皮肤则返回 null）
      */
     public static Object getSkinFromPlayer(Player player) {
         try {
-            // Paper API: Player.getPlayerProfile() 返回 PlayerProfile
-            //            PlayerProfile.getProperties() 返回 Set<ProfileProperty>（不是 Map！）
-            //            ProfileProperty 有 getName()/getValue()/getSignature()
-            Object bukkitProfile = player.getClass().getMethod("getPlayerProfile").invoke(player);
-            @SuppressWarnings("unchecked")
-            java.util.Set<Object> props = (java.util.Set<Object>)
-                    bukkitProfile.getClass().getMethod("getProperties").invoke(bukkitProfile);
+            com.destroystokyo.paper.profile.PlayerProfile profile = player.getPlayerProfile();
+            java.util.Set<com.destroystokyo.paper.profile.ProfileProperty> props = profile.getProperties();
             if (props == null || props.isEmpty()) return null;
 
-            for (Object prop : props) {
-                String name = (String) prop.getClass().getMethod("getName").invoke(prop);
-                if (!"textures".equals(name)) continue;
-                String value = (String) prop.getClass().getMethod("getValue").invoke(prop);
-                String signature = (String) prop.getClass().getMethod("getSignature").invoke(prop);
+            for (com.destroystokyo.paper.profile.ProfileProperty prop : props) {
+                if (!"textures".equals(prop.getName())) continue;
+                String value = prop.getValue();
+                String signature = prop.getSignature();
 
                 Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
                 Constructor<?> ctor = propertyClass.getConstructor(String.class, String.class, String.class);

@@ -26,6 +26,7 @@ public class ConfigManager {
     private double attackDamage;
     private boolean allowOpCommands;
     private boolean invulnerable;
+    private boolean counterattack;
     private int scanRadius;
     private int entityScanRadius;
 
@@ -56,7 +57,8 @@ public class ConfigManager {
         this.moveSpeed = cfg.getDouble("ai.move-speed", 0.6);
         this.attackDamage = cfg.getDouble("ai.attack-damage", 5.0);
         this.allowOpCommands = cfg.getBoolean("ai.allow-op-commands", false);
-        this.invulnerable = cfg.getBoolean("ai.invulnerable", true);
+        this.invulnerable = cfg.getBoolean("ai.invulnerable", false);
+        this.counterattack = cfg.getBoolean("ai.counterattack", true);
         this.scanRadius = cfg.getInt("ai.scan-radius", 8);
         this.entityScanRadius = cfg.getInt("ai.entity-scan-radius", 16);
 

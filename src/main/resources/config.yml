@@ -49,8 +49,11 @@ ai:
   # 是否允许 AI 执行 OP 级命令（建议关闭，安全考虑）
   allow-op-commands: false
 
-  # AI 是否可被攻击
-  invulnerable: true
+  # AI 是否可被攻击（true=无敌，false=可被攻击且会反击）
+  invulnerable: false
+
+  # NPC 被攻击时是否自动反击
+  counterattack: true
 
   # 玩家对话时附带的方块探测半径
   scan-radius: 8
