@@ -81,11 +81,11 @@ public class NmsBackend implements NpcBackend {
                             gameProfileClass, clientInfoClass},
                     new Object[]{minecraftServer, serverLevel, profile, clientInfo});
 
-            // 5. 设置位置和朝向（用 moveTo，比 setPos 更完整）
-            //    moveTo 定义在 Entity 父类，必须沿继承链查找
-            Method moveTo = findMethod(serverPlayerClass,
-                    "moveTo", double.class, double.class, double.class, float.class, float.class);
-            moveTo.invoke(npc, loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
+            // 5. 设置位置（setPos 定义在 Entity 父类，签名最稳定）
+            //    朝向 (yaw/pitch) 在拿到 Bukkit Player 后用 teleport 设置
+            Method setPos = findMethod(serverPlayerClass,
+                    "setPos", double.class, double.class, double.class);
+            setPos.invoke(npc, loc.getX(), loc.getY(), loc.getZ());
 
             // 6. 创建无操作的 Connection（SERVERBOUND，仅用于满足构造器参数校验）
             Class<?> packetFlowClass = nms("network.protocol.PacketFlow");
@@ -126,9 +126,12 @@ public class NmsBackend implements NpcBackend {
             Object infoPacket = createInit.invoke(null, Collections.singleton(npc));
             broadcastPacket(infoPacket);
 
-            // 12. 返回 Bukkit Player
+            // 12. 返回 Bukkit Player，并用 teleport 设置完整朝向（setPos 只设坐标）
             Object bukkitEntity = npc.getClass().getMethod("getBukkitEntity").invoke(npc);
-            return (Player) bukkitEntity;
+            Player bukkitPlayer = (Player) bukkitEntity;
+            bukkitPlayer.teleport(loc);
+
+            return bukkitPlayer;
 
         } catch (Exception e) {
             throw new RuntimeException("NMS 后端创建 NPC 失败: " + rootCause(e), e);
