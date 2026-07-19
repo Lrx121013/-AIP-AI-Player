@@ -7,7 +7,9 @@ import com.aip.ai.LLMClient;
 import com.aip.ai.NpcAnimator;
 import com.aip.commands.AIPCommand;
 import com.aip.config.ConfigManager;
+import com.aip.gui.GuiManager;
 import com.aip.listeners.ChatListener;
+import com.aip.listeners.GuiListener;
 import com.aip.listeners.NpcDamageListener;
 import com.aip.listeners.NpcDeathListener;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -25,6 +27,7 @@ public class AIPlayerPlugin extends JavaPlugin {
     private GameDataCollector gameDataCollector;
     private CommandExecutor commandExecutor;
     private NpcAnimator npcAnimator;
+    private GuiManager guiManager;
 
     @Override
     public void onEnable() {
@@ -53,6 +56,7 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.commandExecutor = new CommandExecutor(this);
         this.npcAnimator = new NpcAnimator(this);
         this.aiPlayerManager = new AIPlayerManager(this);
+        this.guiManager = new GuiManager(this);
 
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
@@ -67,6 +71,7 @@ public class AIPlayerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDamageListener(this), this);
+        getServer().getPluginManager().registerEvents(new GuiListener(this), this);
 
         // 6. 启动自动活动任务
         if (configManager.isAutonomous()) {
@@ -129,5 +134,9 @@ public class AIPlayerPlugin extends JavaPlugin {
 
     public NpcAnimator getNpcAnimator() {
         return npcAnimator;
+    }
+
+    public GuiManager getGuiManager() {
+        return guiManager;
     }
 }
