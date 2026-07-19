@@ -118,13 +118,44 @@ public class NmsBackend implements NpcBackend {
             Method addNewPlayer = findMethod(serverLevel.getClass(), "addNewPlayer", serverPlayerClass);
             addNewPlayer.invoke(serverLevel, npc);
 
-            // 11. 手动广播 PlayerInfoUpdatePacket，让客户端在 tab 列表/实体中看到 NPC
-            //     1.21+ 必须用 createPlayerInitializing(Collection) —— 单独 ADD_PLAYER 不够
+            // 11. 手动广播三组包让客户端能看到 NPC：
+            //     a) PlayerInfoUpdatePacket —— 加入 tab 列表（1.21+ 用 createPlayerInitializing）
+            //     b) AddEntityPacket —— 在客户端生成可见实体（没有这个玩家就"隐身"了）
+            //     c) SetEntityDataPacket —— 同步实体 metadata（皮肤层、装备等）
             Class<?> updatePacketClass = nms("network.protocol.game.ClientboundPlayerInfoUpdatePacket");
             Method createInit = updatePacketClass.getMethod(
                     "createPlayerInitializing", java.util.Collection.class);
             Object infoPacket = createInit.invoke(null, Collections.singleton(npc));
             broadcastPacket(infoPacket);
+
+            // b) ClientboundAddEntityPacket
+            //    1.21+ 构造器签名：(int entityId, UUID uuid, double x, y, z, float xRot, yRot,
+            //                       EntityType, int data, Vec3 delta, double yHeadRot)
+            Class<?> entityTypeClass = nms("world.entity.EntityType");
+            Object playerEntityType = entityTypeClass.getField("PLAYER").get(null);
+            Class<?> vec3Class = nms("world.phys.Vec3");
+            Object zeroDelta = vec3Class.getConstructor(double.class, double.class, double.class)
+                    .newInstance(0, 0, 0);
+            int entityId = (int) npc.getClass().getMethod("getId").invoke(npc);
+
+            Class<?> addEntityPacketClass = nms("network.protocol.game.ClientboundAddEntityPacket");
+            Constructor<?> addEntityCtor = addEntityPacketClass.getConstructor(
+                    int.class, UUID.class, double.class, double.class, double.class,
+                    float.class, float.class, entityTypeClass, int.class, vec3Class, double.class);
+            Object addEntityPacket = addEntityCtor.newInstance(
+                    entityId, uuid, loc.getX(), loc.getY(), loc.getZ(),
+                    loc.getPitch(), loc.getYaw(), playerEntityType, 0, zeroDelta, loc.getYaw());
+            broadcastPacket(addEntityPacket);
+
+            // c) ClientboundSetEntityDataPacket —— 同步 metadata
+            Object entityData = npc.getClass().getMethod("getEntityData").invoke(npc);
+            Object nonDefaultValues = entityData.getClass().getMethod("getNonDefaultValues").invoke(entityData);
+            if (nonDefaultValues != null) {
+                Class<?> setDataPacketClass = nms("network.protocol.game.ClientboundSetEntityDataPacket");
+                Constructor<?> setDataCtor = setDataPacketClass.getConstructor(int.class, java.util.List.class);
+                Object setDataPacket = setDataCtor.newInstance(entityId, nonDefaultValues);
+                broadcastPacket(setDataPacket);
+            }
 
             // 12. 返回 Bukkit Player，并用 teleport 设置完整朝向（setPos 只设坐标）
             Object bukkitEntity = npc.getClass().getMethod("getBukkitEntity").invoke(npc);
