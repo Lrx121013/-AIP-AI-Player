@@ -36,6 +36,8 @@ public class AIPlayer {
     private final AIStats stats = new AIStats();
     /** 个性（功能 3） */
     private Personality personality = Personality.GENTLE;
+    /** 反派模式开启前的原人格，关闭后恢复（P2） */
+    private Personality originalPersonality = null;
     /** 情绪值 0-100，默认 50（功能 9） */
     private int mood = 50;
     /** 死亡位置，用于复活（功能 7） */
@@ -44,6 +46,12 @@ public class AIPlayer {
     private final List<Schedule> schedules = new ArrayList<>();
     /** 死亡日志（功能 10） */
     private final List<DeathRecord> deathLog = new ArrayList<>();
+    /** 上一轮命令执行结果，用于回流给 LLM（P1：执行结果回流） */
+    private ExecutionResult lastCommandResult;
+    /** P2：长期目标管理器 */
+    private final GoalManager goalManager = new GoalManager();
+    /** P3：长期记忆系统 */
+    private final LongTermMemory memory = new LongTermMemory();
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -73,6 +81,12 @@ public class AIPlayer {
         if (personality != null) this.personality = personality;
     }
 
+    /** 反派模式开启前的原人格（P2），可能为 null */
+    public Personality getOriginalPersonality() { return originalPersonality; }
+    public void setOriginalPersonality(Personality originalPersonality) {
+        this.originalPersonality = originalPersonality;
+    }
+
     /** 情绪（功能 9）：0-100，自动 clamp */
     public int getMood() { return mood; }
     public void setMood(int mood) {
@@ -91,6 +105,18 @@ public class AIPlayer {
 
     /** 死亡日志（功能 10） */
     public List<DeathRecord> getDeathLog() { return deathLog; }
+
+    /** 上一轮命令执行结果（P1：执行结果回流，可能为 null） */
+    public ExecutionResult getLastCommandResult() { return lastCommandResult; }
+    public void setLastCommandResult(ExecutionResult lastCommandResult) {
+        this.lastCommandResult = lastCommandResult;
+    }
+
+    /** P2：长期目标管理器 */
+    public GoalManager getGoalManager() { return goalManager; }
+
+    /** P3：长期记忆系统 */
+    public LongTermMemory getMemory() { return memory; }
 
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);

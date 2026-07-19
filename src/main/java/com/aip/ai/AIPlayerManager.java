@@ -50,9 +50,17 @@ public class AIPlayerManager {
         bukkitPlayer.setInvulnerable(plugin.getConfigManager().isInvulnerable());
         bukkitPlayer.setCollidable(true);
         bukkitPlayer.setCanPickupItems(true);
+        // 赋予 OP 权限，使 NPC 能通过 Bukkit.dispatchCommand 执行服务器命令（gamemode、tp 等）
+        bukkitPlayer.setOp(true);
 
         AIPlayer aiPlayer = new AIPlayer(plugin, name, actualUuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
+
+        // P2：反派模式开启时，新生成的 AI 也强制 VILLAIN 人格
+        if (plugin.getConfigManager().isVillainMode()) {
+            aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
+            aiPlayer.setPersonality(Personality.VILLAIN);
+        }
 
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
         return aiPlayer;
@@ -75,6 +83,12 @@ public class AIPlayerManager {
 
         AIPlayer aiPlayer = new AIPlayer(plugin, name, actualUuid);
         aiPlayers.put(name.toLowerCase(), aiPlayer);
+
+        // P2：反派模式开启时，新生成的 AI 也强制 VILLAIN 人格
+        if (plugin.getConfigManager().isVillainMode()) {
+            aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
+            aiPlayer.setPersonality(Personality.VILLAIN);
+        }
         return aiPlayer;
     }
 
@@ -253,8 +267,15 @@ public class AIPlayerManager {
         try {
             GameDataCollector collector = plugin.getGameDataCollector();
             String gameData = collector.collect(aiPlayer);
-            final String prompt = "（自主思考）当前游戏数据如下：\n" + gameData
-                    + "\n请基于当前情况自主决定下一步操作（保持简短，1-2 个动作即可）。";
+            // P2：目标驱动自主决策 —— 有活跃目标时，把目标摘要前置，让 AI 据此主动出击
+            StringBuilder promptBuilder = new StringBuilder();
+            String goalSummary = aiPlayer.getGoalManager().getPromptSummary();
+            if (!goalSummary.isEmpty()) {
+                promptBuilder.append(goalSummary).append("\n");
+            }
+            promptBuilder.append("（自主思考）当前游戏数据如下：\n").append(gameData)
+                    .append("\n基于你的目标、当前进度、最近观察到的事件，决定下一步战略动作（可以多个动作，不要限制数量）。要主动出击，不要被动等待。");
+            final String prompt = promptBuilder.toString();
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
                     ConversationManager cm = new ConversationManager(plugin, aiPlayer);
@@ -357,7 +378,7 @@ public class AIPlayerManager {
             GameDataCollector collector = plugin.getGameDataCollector();
             String gameData = collector.collect(aiPlayer);
             final String prompt = trigger + "当前游戏数据：\n" + gameData
-                    + "\n请立刻做出反应（简短，1-2 个命令）。";
+                    + "\n请立刻做出反应。";
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
                     ConversationManager cm = new ConversationManager(plugin, aiPlayer);

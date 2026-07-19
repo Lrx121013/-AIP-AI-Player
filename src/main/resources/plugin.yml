@@ -27,6 +27,12 @@ commands:
       /aip schedule <add|list|clear> - AI schedule
       /aip mood <name> - View mood
       /aip deathlog <name> - View death log
+      /aip goal add|list|complete|progress - AI goal management
+      /aip memory show <ai> - View AI memory
+      /aip profile show <player> - View player profile
+      /aip villain on|off|status - Toggle villain mode
+      /aip team role <ai> <role> - Set combat role
+      /aip team target <player> - Set coordination target
     aliases:
       - aiplayer
       - ai
@@ -43,4 +49,7 @@ permissions:
     default: true
   aip.gui:
     description: Allows opening AIPlayer GUI
+    default: op
+  aip.villain:
+    description: Allows toggling villain mode
     default: op

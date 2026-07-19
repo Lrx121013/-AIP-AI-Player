@@ -1,5 +1,6 @@
 package com.aip.ai;
 
+import com.aip.AIPlayerPlugin;
 import com.aip.config.ConfigManager;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -39,9 +40,11 @@ import java.util.Set;
 public class GameDataCollector {
 
     private final ConfigManager config;
+    private final AIPlayerPlugin plugin;
 
-    public GameDataCollector(ConfigManager config) {
-        this.config = config;
+    public GameDataCollector(AIPlayerPlugin plugin) {
+        this.plugin = plugin;
+        this.config = plugin.getConfigManager();
     }
 
     /**
@@ -160,6 +163,26 @@ public class GameDataCollector {
         sb.append(scanNearbyPlayers(entity, config.getEntityScanRadius()));
         sb.append("=== 服务器所有玩家 ===\n");
         sb.append(listAllPlayers(entity, world));
+
+        // P3：附加附近玩家档案摘要（半径 16）
+        if (plugin != null && plugin.getPlayerProfileManager() != null) {
+            List<Player> nearby = new ArrayList<>();
+            for (Player p : entity.getWorld().getPlayers()) {
+                if (p.equals(entity)) continue;
+                double d;
+                try {
+                    d = p.getLocation().distance(loc);
+                } catch (Exception e) {
+                    continue;
+                }
+                if (d <= 16) nearby.add(p);
+            }
+            String profileSummary = plugin.getPlayerProfileManager()
+                    .getNearbySummary(entity.getLocation(), 16, nearby);
+            if (!profileSummary.isEmpty()) {
+                sb.append(profileSummary);
+            }
+        }
 
         sb.append("=== 数据结束 ===\n");
         return sb.toString();

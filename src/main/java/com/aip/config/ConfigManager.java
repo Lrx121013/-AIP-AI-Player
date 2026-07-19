@@ -101,4 +101,11 @@ public class ConfigManager {
     public int getScanRadius() { return scanRadius; }
     public int getEntityScanRadius() { return entityScanRadius; }
     public boolean isDebug() { return debug; }
+
+    /**
+     * 是否启用反派模式（实时读取配置，支持 /aip villain 动态切换）
+     */
+    public boolean isVillainMode() {
+        return plugin.getConfig().getBoolean("ai.villain-mode", false);
+    }
 }

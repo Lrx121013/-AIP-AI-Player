@@ -3,6 +3,7 @@ package com.aip.listeners;
 import com.aip.AIPlayerPlugin;
 import com.aip.ai.AIPlayer;
 import com.aip.ai.DeathRecord;
+import com.aip.ai.MemoryRecord;
 import com.aip.ai.NpcHelper;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
@@ -58,6 +59,12 @@ public class NpcDeathListener implements Listener {
         } catch (Exception ignored) {
         }
         ai.getDeathLog().add(new DeathRecord(System.currentTimeMillis(), cause, killer));
+
+        // P3：长期记忆——记录死亡事件
+        String killerNameForMemory = event.getEntity().getKiller() != null
+                ? event.getEntity().getKiller().getName() : "未知";
+        ai.getMemory().addRecord(MemoryRecord.Type.DEATH,
+                "被 " + killerNameForMemory + " 击杀", killerNameForMemory);
 
         // 仅移除实体，保留 AIPlayer（功能 7）—— 不调用 aiPlayerManager.remove(name)
         Bukkit.getScheduler().runTaskLater(plugin, () -> {

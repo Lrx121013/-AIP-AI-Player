@@ -5,7 +5,9 @@ import com.aip.ai.CommandExecutor;
 import com.aip.ai.GameDataCollector;
 import com.aip.ai.LLMClient;
 import com.aip.ai.NpcAnimator;
+import com.aip.ai.PlayerProfileManager;
 import com.aip.ai.RelationManager;
+import com.aip.ai.StrategyEngine;
 import com.aip.ai.TaskManager;
 import com.aip.ai.TeamManager;
 import com.aip.commands.AIPCommand;
@@ -38,6 +40,10 @@ public class AIPlayerPlugin extends JavaPlugin {
     private TaskManager taskManager;
     private RelationManager relationManager;
 
+    // ===== P3 新增管理器 =====
+    private PlayerProfileManager playerProfileManager;
+    private StrategyEngine strategyEngine;
+
     @Override
     public void onEnable() {
         instance = this;
@@ -61,7 +67,7 @@ public class AIPlayerPlugin extends JavaPlugin {
 
         // 3. 初始化核心组件
         this.llmClient = new LLMClient(configManager);
-        this.gameDataCollector = new GameDataCollector(configManager);
+        this.gameDataCollector = new GameDataCollector(this);
         this.commandExecutor = new CommandExecutor(this);
         this.npcAnimator = new NpcAnimator(this);
         this.aiPlayerManager = new AIPlayerManager(this);
@@ -71,6 +77,10 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.teamManager = new TeamManager();
         this.relationManager = new RelationManager();
         this.taskManager = new TaskManager(this);
+
+        // P3：初始化玩家档案与策略引擎
+        this.playerProfileManager = new PlayerProfileManager();
+        this.strategyEngine = new StrategyEngine(this);
 
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
@@ -182,5 +192,15 @@ public class AIPlayerPlugin extends JavaPlugin {
     /** 关系图谱管理器（功能 6） */
     public RelationManager getRelationManager() {
         return relationManager;
+    }
+
+    /** P3：玩家档案管理器 */
+    public PlayerProfileManager getPlayerProfileManager() {
+        return playerProfileManager;
+    }
+
+    /** P3：策略引擎 */
+    public StrategyEngine getStrategyEngine() {
+        return strategyEngine;
     }
 }

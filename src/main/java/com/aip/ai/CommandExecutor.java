@@ -16,8 +16,12 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,12 +42,26 @@ public class CommandExecutor {
     }
 
     /**
-     * 处理 AI 的完整回复：
+     * 处理 AI 的完整回复（兼容入口，忽略返回值）：
      * 1. 提取所有 [COMMAND:...] 并按顺序执行
      * 2. 把剩余文字作为对话内容广播（不显示命令本身）
+     * <p>
+     * 内部委托给 {@link #executeWithResult}，并自动把最后一条命令的结果存入 aiPlayer。
      */
     public void execute(AIPlayer aiPlayer, String reply) {
-        if (reply == null || reply.isEmpty()) return;
+        executeWithResult(aiPlayer, reply);
+    }
+
+    /**
+     * 处理 AI 的完整回复并返回执行结果：
+     * 1. 提取所有 [COMMAND:...] 并按顺序执行
+     * 2. 把剩余文字作为对话内容广播（不显示命令本身）
+     * 3. 把最后一条命令的执行结果存入 aiPlayer（供下一轮对话回流给 LLM）
+     *
+     * @return 最后一条命令的 {@link ExecutionResult}；若回复中无命令则返回 null
+     */
+    public ExecutionResult executeWithResult(AIPlayer aiPlayer, String reply) {
+        if (reply == null || reply.isEmpty()) return null;
 
         Matcher matcher = COMMAND_PATTERN.matcher(reply);
         List<String> commands = new ArrayList<>();
@@ -71,23 +89,45 @@ public class CommandExecutor {
         // 埋点：对话计数（功能 1）—— 每轮 LLM 回复计为一次对话
         aiPlayer.getStats().incChat();
 
-        // 2. 顺序执行命令
+        // 2. 顺序执行命令，记录最后一条结果
+        ExecutionResult lastResult = null;
         for (String cmd : commands) {
+            ExecutionResult result;
             try {
-                executeCommand(aiPlayer, cmd);
+                result = dispatchCommand(aiPlayer, cmd);
+            } catch (Exception e) {
+                // dispatchCommand 内部已捕获大部分异常；这里是兜底
+                String cmdName = cmd.split("\\s+")[0].toLowerCase();
+                result = new ExecutionResult(cmdName, false, e.getMessage());
+            }
+            if (result.isSuccess()) {
                 // 埋点：命令成功（功能 1）
                 aiPlayer.getStats().incCommand(true);
-            } catch (Exception e) {
+            } else {
                 // 埋点：命令失败（功能 1）
                 aiPlayer.getStats().incCommand(false);
-                plugin.getLogger().warning("执行命令失败 [" + cmd + "]: " + e.getMessage());
+                plugin.getLogger().warning("执行命令失败 [" + cmd + "]: " + result.getReason());
             }
+            lastResult = result;
         }
+
+        // 3. 把最后一条命令结果存入 aiPlayer，供下一轮对话回流给 LLM
+        if (lastResult != null) {
+            aiPlayer.setLastCommandResult(lastResult);
+        }
+        return lastResult;
     }
 
-    private void executeCommand(AIPlayer aiPlayer, String fullCommand) {
+    /**
+     * 分发并执行单条 [COMMAND:xxx args] 命令，返回执行结果。
+     * 未知命令返回 (cmd, false, "未知命令")；
+     * 抛出的异常返回 (cmd, false, e.getMessage())。
+     */
+    private ExecutionResult dispatchCommand(AIPlayer aiPlayer, String fullCommand) {
         String[] parts = fullCommand.split("\\s+");
-        if (parts.length == 0) return;
+        if (parts.length == 0) {
+            return new ExecutionResult("", false, "空命令");
+        }
         String cmd = parts[0].toLowerCase();
         String[] args = new String[parts.length - 1];
         System.arraycopy(parts, 1, args, 0, args.length);
@@ -95,77 +135,139 @@ public class CommandExecutor {
         Player entity = aiPlayer.getEntity();
         if (entity == null || !entity.isValid()) {
             plugin.getLogger().warning("AI 实体不存在: " + aiPlayer.getName());
-            return;
+            return new ExecutionResult(cmd, false, "AI 实体不存在");
         }
 
-        switch (cmd) {
-            case "walk" -> handleWalk(aiPlayer, args);
-            case "walk_dir" -> handleWalkDir(aiPlayer, args);
-            case "follow" -> handleFollow(aiPlayer, args);
-            case "stop" -> handleStop(aiPlayer);
-            case "break" -> handleBreak(entity, args);
-            case "place" -> handlePlace(entity, args);
-            case "attack" -> handleAttack(aiPlayer, args);
-            case "jump" -> handleJump(entity);
-            case "look" -> handleLook(entity, args);
-            case "say" -> handleSay(aiPlayer, args);
-            case "cmd" -> handleCmd(aiPlayer, args);
-            case "equip" -> handleEquip(entity, args);
-            case "drop" -> handleDrop(entity, args);
-            // 姿态/动作
-            case "sit" -> handleSit(entity);
-            case "sleep" -> handleSleep(entity);
-            case "sneak" -> handleSneak(entity);
-            case "stand" -> handleStand(entity);
-            case "wave" -> handleWave(entity);
-            case "dance" -> handleDance(entity);
-            case "swing" -> plugin.getNpcAnimator().swingArm(entity);
-            case "look_at_player" -> handleLookAtPlayer(entity, args);
-            case "approach" -> handleApproach(entity, args);
-            // 新增动作
-            case "face" -> handleFace(entity, args);
-            case "pickup" -> handlePickup(entity);
-            case "pickup_all" -> handlePickupAll(entity);
-            case "use_item" -> handleUseItem(entity);
-            case "interact" -> handleInteractBlock(entity, args);
-            case "mount" -> handleMount(entity, args);
-            case "dismount" -> entity.leaveVehicle();
-            case "eat" -> handleEat(entity);
-            case "throw_item" -> handleThrowItem(entity);
-            case "give_random" -> handleGiveRandom(entity, args);
-            case "teleport_player" -> handleTeleportPlayer(entity, args);
-            case "respawn" -> handleRespawn(entity);
-            case "set_health" -> handleSetHealth(entity, args);
-            case "set_food" -> handleSetFood(entity, args);
-            case "weather" -> handleWeather(entity, args);
-            case "time" -> handleTime(entity, args);
-            case "broadcast" -> handleBroadcast(aiPlayer, args);
-            case "kill" -> handleKill(entity);
-            case "heal" -> handleHeal(entity, args);
-            case "feed" -> handleFeed(entity, args);
-            case "gamemode" -> handleGamemode(entity, args);
-            case "fly" -> handleFly(entity, args);
-            case "ignite" -> handleIgnite(entity, args);
-            case "extinguish" -> handleExtinguish(entity);
-            case "strike" -> handleStrike(entity, args);
-            case "explode" -> handleExplode(entity, args);
-            case "spawnmob" -> handleSpawnMob(entity, args);
-            case "xp" -> handleXp(entity, args);
-            case "clearinv" -> handleClearInv(entity);
-            case "rename" -> handleRename(aiPlayer, args);
-            case "ride" -> handleRide(entity, args);
-            case "carry" -> handleCarry(entity, args);
-            case "duplicate" -> handleDuplicate(entity);
-            case "openinv" -> handleOpenInv(entity, args);
-            case "home" -> handleHome(entity);
-            case "top" -> handleTop(entity);
-            case "combo" -> handleCombo(entity, args);
-            case "emote" -> handleEmote(entity, args);
-            default -> plugin.getLogger().warning("未知 AI 命令: " + cmd);
+        try {
+            switch (cmd) {
+                case "walk" -> handleWalk(aiPlayer, args);
+                case "walk_dir" -> handleWalkDir(aiPlayer, args);
+                case "follow" -> handleFollow(aiPlayer, args);
+                case "stop" -> handleStop(aiPlayer);
+                case "break" -> handleBreak(entity, args);
+                case "place" -> handlePlace(entity, args);
+                case "attack" -> handleAttack(aiPlayer, args);
+                case "jump" -> handleJump(entity);
+                case "look" -> handleLook(entity, args);
+                case "say" -> handleSay(aiPlayer, args);
+                case "cmd" -> handleCmd(aiPlayer, args);
+                case "equip" -> handleEquip(entity, args);
+                case "drop" -> handleDrop(entity, args);
+                // 姿态/动作
+                case "sit" -> handleSit(entity);
+                case "sleep" -> handleSleep(entity);
+                case "sneak" -> handleSneak(entity);
+                case "stand" -> handleStand(entity);
+                case "wave" -> handleWave(entity);
+                case "dance" -> handleDance(entity);
+                case "swing" -> handleSwing(entity);
+                case "look_at_player" -> handleLookAtPlayer(entity, args);
+                case "approach" -> handleApproach(entity, args);
+                // 新增动作
+                case "face" -> handleFace(entity, args);
+                case "pickup" -> handlePickup(entity);
+                case "pickup_all" -> handlePickupAll(entity);
+                case "use_item" -> handleUseItem(entity);
+                case "interact" -> handleInteractBlock(entity, args);
+                case "mount" -> handleMount(entity, args);
+                case "dismount" -> handleDismount(entity);
+                case "eat" -> handleEat(entity);
+                case "throw_item" -> handleThrowItem(entity);
+                case "give_random" -> handleGiveRandom(entity, args);
+                case "teleport_player" -> handleTeleportPlayer(entity, args);
+                case "respawn" -> handleRespawn(entity);
+                case "set_health" -> handleSetHealth(entity, args);
+                case "set_food" -> handleSetFood(entity, args);
+                case "weather" -> handleWeather(entity, args);
+                case "time" -> handleTime(entity, args);
+                case "broadcast" -> handleBroadcast(aiPlayer, args);
+                case "kill" -> handleKill(entity);
+                case "heal" -> handleHeal(entity, args);
+                case "feed" -> handleFeed(entity, args);
+                case "gamemode" -> handleGamemode(entity, args);
+                case "fly" -> handleFly(entity, args);
+                case "ignite" -> handleIgnite(entity, args);
+                case "extinguish" -> handleExtinguish(entity);
+                case "strike" -> handleStrike(entity, args);
+                case "explode" -> handleExplode(entity, args);
+                case "spawnmob" -> handleSpawnMob(entity, args);
+                case "xp" -> handleXp(entity, args);
+                case "clearinv" -> handleClearInv(entity);
+                case "rename" -> handleRename(aiPlayer, args);
+                case "ride" -> handleRide(entity, args);
+                case "carry" -> handleCarry(entity, args);
+                case "duplicate" -> handleDuplicate(entity);
+                case "openinv" -> handleOpenInv(entity, args);
+                case "home" -> handleHome(entity);
+                case "top" -> handleTop(entity);
+                case "combo" -> handleCombo(entity, args);
+                case "emote" -> handleEmote(entity, args);
+                case "strategy" -> handleStrategy(aiPlayer, args);
+                // P4：服务器级控制命令（受 allow-op-commands 控制）
+                case "op" -> handleOp(entity, args);
+                case "deop" -> handleDeop(entity, args);
+                case "ban" -> handleBan(entity, args);
+                case "kick" -> handleKick(entity, args);
+                case "tp_all" -> handleTpAll(entity, args);
+                case "gamemode_player" -> handleGamemodePlayer(entity, args);
+                default -> {
+                    plugin.getLogger().warning("未知 AI 命令: " + cmd);
+                    return new ExecutionResult(cmd, false, "未知命令");
+                }
+            }
+            return new ExecutionResult(cmd, true, "");
+        } catch (Exception e) {
+            return new ExecutionResult(cmd, false, e.getMessage());
         }
     }
 
+    /**
+     * 反射扫描本类所有带 {@link AICommand} 注解的方法，按 category 分组生成命令文档。
+     * 文档格式与原 config.yml 中的硬编码命令清单保持一致，便于直接注入 system prompt。
+     */
+    public String getCommandDocs() {
+        // 收集所有 @AICommand 注解
+        List<AICommand> all = new ArrayList<>();
+        for (Method method : this.getClass().getDeclaredMethods()) {
+            AICommand ann = method.getAnnotation(AICommand.class);
+            if (ann != null) all.add(ann);
+        }
+
+        // 预定义 category 顺序，保证文档可读性
+        List<String> categoryOrder = List.of(
+                "移动", "视角", "方块", "战斗", "物品", "聊天", "姿态", "动作", "自身状态", "OP", "策略", "其他"
+        );
+        Map<String, List<AICommand>> grouped = new LinkedHashMap<>();
+        for (String cat : categoryOrder) grouped.put(cat, new ArrayList<>());
+        for (AICommand ann : all) {
+            grouped.computeIfAbsent(ann.category(), k -> new ArrayList<>()).add(ann);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("### 可用命令列表（自动生成，请勿修改）");
+        for (String cat : categoryOrder) {
+            List<AICommand> list = grouped.get(cat);
+            if (list == null || list.isEmpty()) continue;
+            // 同类命令按 name 排序，输出稳定
+            list.sort(Comparator.comparing(AICommand::name));
+            sb.append("\n# ").append(cat).append("\n");
+            for (AICommand ann : list) {
+                sb.append("- [COMMAND:").append(ann.name());
+                if (!ann.args().isEmpty()) {
+                    sb.append(" ").append(ann.args());
+                }
+                sb.append("] —— ").append(ann.desc());
+                if (ann.op()) {
+                    sb.append("（需要 OP 权限）");
+                }
+                sb.append("\n");
+            }
+        }
+        return sb.toString().trim();
+    }
+
     /** face <x> <y> <z> 或 face_player <玩家名> —— 朝向某点或某玩家 */
+    @AICommand(name = "face", desc = "朝向某点或某玩家", args = "x y z | player 玩家名", category = "视角")
     private void handleFace(Player entity, String[] args) {
         if (args.length >= 3) {
             try {
@@ -190,6 +292,7 @@ public class CommandExecutor {
     }
 
     /** 捡起附近 5 格内的所有掉落物 */
+    @AICommand(name = "pickup", desc = "捡起附近 5 格内掉落物", category = "物品")
     private void handlePickup(Player entity) {
         double radius = 5.0;
         for (Entity e : entity.getNearbyEntities(radius, radius, radius)) {
@@ -210,6 +313,7 @@ public class CommandExecutor {
     }
 
     /** 捡起附近 10 格内所有掉落物 */
+    @AICommand(name = "pickup_all", desc = "捡起附近 10 格内所有掉落物", category = "物品")
     private void handlePickupAll(Player entity) {
         for (Entity e : entity.getNearbyEntities(10, 10, 10)) {
             if (e instanceof org.bukkit.entity.Item item) {
@@ -227,6 +331,7 @@ public class CommandExecutor {
     }
 
     /** 使用手持物（吃食物、喝药水等） */
+    @AICommand(name = "use_item", desc = "使用手持物（吃食物、喝药水等）", category = "物品")
     private void handleUseItem(Player entity) {
         org.bukkit.inventory.ItemStack hand = entity.getInventory().getItemInMainHand();
         if (hand == null || hand.getType().isAir()) return;
@@ -243,6 +348,7 @@ public class CommandExecutor {
     }
 
     /** interact <x> <y> <z> —— 与方块交互（开门、按按钮、开箱子等） */
+    @AICommand(name = "interact", desc = "与方块交互（开门、按按钮、开箱子等）", args = "x y z", category = "方块")
     private void handleInteractBlock(Player entity, String[] args) {
         if (args.length < 3) return;
         try {
@@ -267,6 +373,7 @@ public class CommandExecutor {
     }
 
     /** mount <实体名|nearest> —— 骑乘附近实体（矿车、船、马等） */
+    @AICommand(name = "mount", desc = "骑乘附近实体（矿车、船、马等）", args = "实体名|nearest", category = "移动")
     private void handleMount(Player entity, String[] args) {
         if (args.length < 1) return;
         String target = args[0];
@@ -296,11 +403,13 @@ public class CommandExecutor {
     }
 
     /** eat —— 直接吃完手里食物并恢复饱食度 */
+    @AICommand(name = "eat", desc = "吃手里食物恢复饱食度", category = "物品")
     private void handleEat(Player entity) {
         handleUseItem(entity);
     }
 
     /** throw_item —— 丢出主手物品（朝看的方向） */
+    @AICommand(name = "throw_item", desc = "朝看的方向丢出主手物品", category = "物品")
     private void handleThrowItem(Player entity) {
         org.bukkit.inventory.ItemStack hand = entity.getInventory().getItemInMainHand();
         if (hand == null || hand.getType().isAir()) return;
@@ -319,6 +428,7 @@ public class CommandExecutor {
     }
 
     /** give_random <物品类型> [数量] —— 给 AI 加物品（测试用，可视为捡到） */
+    @AICommand(name = "give_random", desc = "给自己加物品（测试用）", args = "物品类型 [数量]", category = "物品")
     private void handleGiveRandom(Player entity, String[] args) {
         if (args.length < 1) return;
         Material mat = Material.matchMaterial(args[0].toUpperCase());
@@ -329,6 +439,7 @@ public class CommandExecutor {
     }
 
     /** teleport_player <玩家名> <x> <y> <z> —— 把玩家传送到坐标（OP 用，安全） */
+    @AICommand(name = "teleport_player", desc = "把玩家传送到坐标", args = "玩家名 x y z", category = "OP", op = true)
     private void handleTeleportPlayer(Player entity, String[] args) {
         if (!plugin.getConfigManager().isAllowOpCommands()) return;
         if (args.length < 4) return;
@@ -345,6 +456,7 @@ public class CommandExecutor {
     }
 
     /** respawn —— 强制重生（如果死了） */
+    @AICommand(name = "respawn", desc = "如果死了，强制重生", category = "OP", op = true)
     private void handleRespawn(Player entity) {
         if (entity.isDead()) {
             try {
@@ -355,6 +467,7 @@ public class CommandExecutor {
     }
 
     /** set_health <数值> —— 设置血量（需要 OP 权限） */
+    @AICommand(name = "set_health", desc = "设置血量", args = "数值", category = "OP", op = true)
     private void handleSetHealth(Player entity, String[] args) {
         if (!plugin.getConfigManager().isAllowOpCommands()) return;
         if (args.length < 1) return;
@@ -366,6 +479,7 @@ public class CommandExecutor {
     }
 
     /** set_food <数值> —— 设置饱食度（需要 OP 权限） */
+    @AICommand(name = "set_food", desc = "设置饱食度", args = "数值", category = "OP", op = true)
     private void handleSetFood(Player entity, String[] args) {
         if (!plugin.getConfigManager().isAllowOpCommands()) return;
         if (args.length < 1) return;
@@ -377,6 +491,7 @@ public class CommandExecutor {
     }
 
     /** weather <sun|rain|storm> —— 改变天气（需要 OP 权限） */
+    @AICommand(name = "weather", desc = "改变天气", args = "sun|rain|storm", category = "OP", op = true)
     private void handleWeather(Player entity, String[] args) {
         if (!plugin.getConfigManager().isAllowOpCommands()) return;
         if (args.length < 1) return;
@@ -398,6 +513,7 @@ public class CommandExecutor {
     }
 
     /** time <day|night|dawn|dusk|数值> —— 改变时间（需要 OP 权限） */
+    @AICommand(name = "time", desc = "改变时间", args = "day|night|dawn|dusk|数值", category = "OP", op = true)
     private void handleTime(Player entity, String[] args) {
         if (!plugin.getConfigManager().isAllowOpCommands()) return;
         if (args.length < 1) return;
@@ -423,6 +539,7 @@ public class CommandExecutor {
     }
 
     /** broadcast <消息> —— 服务器广播消息 */
+    @AICommand(name = "broadcast", desc = "服务器广播消息", args = "消息", category = "聊天")
     private void handleBroadcast(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         String msg = String.join(" ", args);
@@ -437,6 +554,7 @@ public class CommandExecutor {
         }
     }
 
+    @AICommand(name = "walk", desc = "走到指定坐标（绝对坐标，会自动寻路绕过障碍）", args = "x y z", category = "移动")
     private void handleWalk(AIPlayer aiPlayer, String[] args) {
         if (args.length < 3) return;
         Player entity = aiPlayer.getEntity();
@@ -451,6 +569,7 @@ public class CommandExecutor {
         }
     }
 
+    @AICommand(name = "walk_dir", desc = "朝指定方向走指定距离", args = "方向 距离", category = "移动")
     private void handleWalkDir(AIPlayer aiPlayer, String[] args) {
         if (args.length < 2) return;
         Player entity = aiPlayer.getEntity();
@@ -521,16 +640,19 @@ public class CommandExecutor {
         }.runTaskTimer(plugin, 0L, 5L);
     }
 
+    @AICommand(name = "follow", desc = "跟随某个玩家", args = "玩家名", category = "移动")
     private void handleFollow(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         aiPlayer.setFollowing(args[0]);
         aiPlayer.startFollowTask();
     }
 
+    @AICommand(name = "stop", desc = "停止移动", category = "移动")
     private void handleStop(AIPlayer aiPlayer) {
         aiPlayer.setFollowing(null);
     }
 
+    @AICommand(name = "break", desc = "破坏指定坐标的方块", args = "x y z", category = "方块")
     private void handleBreak(Player entity, String[] args) {
         if (args.length < 3) return;
         try {
@@ -546,6 +668,7 @@ public class CommandExecutor {
         }
     }
 
+    @AICommand(name = "place", desc = "在指定坐标放置方块", args = "x y z 方块类型", category = "方块")
     private void handlePlace(Player entity, String[] args) {
         if (args.length < 4) return;
         try {
@@ -563,6 +686,7 @@ public class CommandExecutor {
         }
     }
 
+    @AICommand(name = "attack", desc = "攻击附近实体（实体名或 nearest）", args = "目标名", category = "战斗")
     private void handleAttack(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         Player entity = aiPlayer.getEntity();
@@ -627,12 +751,14 @@ public class CommandExecutor {
         aiPlayer.adjustMood(5);
     }
 
+    @AICommand(name = "jump", desc = "跳跃", category = "移动")
     private void handleJump(Player entity) {
         Vector v = entity.getVelocity();
         v.setY(0.5);
         entity.setVelocity(v);
     }
 
+    @AICommand(name = "look", desc = "转身朝某方向看", args = "north|south|east|west|up|down", category = "视角")
     private void handleLook(Player entity, String[] args) {
         if (args.length < 1) return;
         String dir = args[0].toLowerCase();
@@ -651,6 +777,7 @@ public class CommandExecutor {
         entity.teleport(loc);
     }
 
+    @AICommand(name = "say", desc = "在聊天框发言", args = "消息内容", category = "聊天")
     private void handleSay(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         String msg = String.join(" ", args);
@@ -661,6 +788,7 @@ public class CommandExecutor {
         aiPlayer.adjustMood(2);
     }
 
+    @AICommand(name = "cmd", desc = "执行服务器命令（慎用）", args = "服务器命令", category = "OP", op = true)
     private void handleCmd(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         if (!plugin.getConfigManager().isAllowOpCommands()) {
@@ -673,6 +801,7 @@ public class CommandExecutor {
         Bukkit.dispatchCommand(console, fullCmd);
     }
 
+    @AICommand(name = "equip", desc = "装备物品到指定槽位", args = "槽位 物品类型", category = "物品")
     private void handleEquip(Player entity, String[] args) {
         if (args.length < 2) return;
         String slot = args[0].toLowerCase();
@@ -694,6 +823,7 @@ public class CommandExecutor {
         }
     }
 
+    @AICommand(name = "drop", desc = "丢弃某槽位物品", args = "槽位", category = "物品")
     private void handleDrop(Player entity, String[] args) {
         if (args.length < 1) return;
         String slot = args[0].toLowerCase();
@@ -729,30 +859,42 @@ public class CommandExecutor {
 
     // ===== 姿态/动作 =====
 
+    @AICommand(name = "sit", desc = "坐下", category = "姿态")
     private void handleSit(Player entity) {
         plugin.getNpcAnimator().sit(entity);
     }
 
+    @AICommand(name = "sleep", desc = "躺下睡觉", category = "姿态")
     private void handleSleep(Player entity) {
         plugin.getNpcAnimator().sleep(entity);
     }
 
+    @AICommand(name = "sneak", desc = "潜行", category = "姿态")
     private void handleSneak(Player entity) {
         plugin.getNpcAnimator().sneak(entity);
     }
 
+    @AICommand(name = "stand", desc = "恢复站立（取消坐下/睡觉/潜行）", category = "姿态")
     private void handleStand(Player entity) {
         plugin.getNpcAnimator().stand(entity);
     }
 
+    @AICommand(name = "wave", desc = "挥手打招呼", category = "动作")
     private void handleWave(Player entity) {
         plugin.getNpcAnimator().wave(entity);
     }
 
+    @AICommand(name = "dance", desc = "跳舞（连续挥手+跳跃+旋转）", category = "动作")
     private void handleDance(Player entity) {
         plugin.getNpcAnimator().dance(entity);
     }
 
+    @AICommand(name = "swing", desc = "挥动主手", category = "动作")
+    private void handleSwing(Player entity) {
+        plugin.getNpcAnimator().swingArm(entity);
+    }
+
+    @AICommand(name = "look_at_player", desc = "持续看向某玩家 5 秒（聊天时用）", args = "玩家名", category = "视角")
     private void handleLookAtPlayer(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -763,6 +905,7 @@ public class CommandExecutor {
         plugin.getNpcAnimator().lookAtPlayerTemporarily(entity, target, 100);
     }
 
+    @AICommand(name = "approach", desc = "走到玩家身边并挥手打招呼", args = "玩家名", category = "移动")
     private void handleApproach(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -773,26 +916,35 @@ public class CommandExecutor {
         plugin.getNpcAnimator().approachPlayer(entity, target);
     }
 
+    @AICommand(name = "dismount", desc = "下坐骑", category = "移动")
+    private void handleDismount(Player entity) {
+        entity.leaveVehicle();
+    }
+
     // ===== 新增 20 个功能命令 =====
 
     /** kill —— 自杀（测试用） */
+    @AICommand(name = "kill", desc = "自杀", category = "自身状态")
     private void handleKill(Player entity) {
         entity.setHealth(0);
     }
 
     /** heal [数值] —— 恢复血量，默认 20 */
+    @AICommand(name = "heal", desc = "恢复血量（默认 20）", args = "数值", category = "自身状态")
     private void handleHeal(Player entity, String[] args) {
         double amount = args.length >= 1 ? safeParseDouble(args[0], 20) : 20;
         entity.setHealth(Math.min(20, entity.getHealth() + amount));
     }
 
     /** feed [数值] —— 恢复饱食度，默认 20 */
+    @AICommand(name = "feed", desc = "恢复饱食度（默认 20）", args = "数值", category = "自身状态")
     private void handleFeed(Player entity, String[] args) {
         int amount = args.length >= 1 ? safeParse(args[0], 20) : 20;
         entity.setFoodLevel(Math.min(20, entity.getFoodLevel() + amount));
     }
 
     /** gamemode <survival|creative|adventure|spectator> */
+    @AICommand(name = "gamemode", desc = "切换自己的游戏模式", args = "survival|creative|adventure|spectator", category = "自身状态")
     private void handleGamemode(Player entity, String[] args) {
         if (args.length < 1) return;
         try {
@@ -803,6 +955,7 @@ public class CommandExecutor {
     }
 
     /** fly <true|false> —— 开关飞行 */
+    @AICommand(name = "fly", desc = "开关飞行", args = "true|false", category = "自身状态")
     private void handleFly(Player entity, String[] args) {
         boolean fly = args.length < 1 || Boolean.parseBoolean(args[0]);
         entity.setAllowFlight(fly);
@@ -810,17 +963,20 @@ public class CommandExecutor {
     }
 
     /** ignite [秒数] —— 着火 */
+    @AICommand(name = "ignite", desc = "自燃（默认 5 秒）", args = "秒数", category = "自身状态")
     private void handleIgnite(Player entity, String[] args) {
         int seconds = args.length >= 1 ? safeParse(args[0], 5) : 5;
         entity.setFireTicks(seconds * 20);
     }
 
     /** extinguish —— 灭火 */
+    @AICommand(name = "extinguish", desc = "灭火", category = "自身状态")
     private void handleExtinguish(Player entity) {
         entity.setFireTicks(0);
     }
 
     /** strike [玩家名|self] —— 雷击 */
+    @AICommand(name = "strike", desc = "雷击目标（默认自己）", args = "玩家名|self", category = "战斗")
     private void handleStrike(Player entity, String[] args) {
         Player target = entity;
         if (args.length >= 1 && !args[0].equalsIgnoreCase("self")) {
@@ -832,12 +988,14 @@ public class CommandExecutor {
     }
 
     /** explode [威力] —— 在 AI 位置产生爆炸 */
+    @AICommand(name = "explode", desc = "在自己位置产生爆炸（默认威力 2）", args = "威力", category = "战斗")
     private void handleExplode(Player entity, String[] args) {
         float power = args.length >= 1 ? (float) safeParseDouble(args[0], 2.0) : 2.0f;
         entity.getWorld().createExplosion(entity.getLocation(), power, false, true);
     }
 
     /** spawnmob <生物类型> [数量] */
+    @AICommand(name = "spawnmob", desc = "召唤生物", args = "类型 数量", category = "物品")
     private void handleSpawnMob(Player entity, String[] args) {
         if (args.length < 1) return;
         org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(args[0].toUpperCase());
@@ -850,17 +1008,20 @@ public class CommandExecutor {
     }
 
     /** xp <数值> —— 给经验 */
+    @AICommand(name = "xp", desc = "给自己经验", args = "数值", category = "物品")
     private void handleXp(Player entity, String[] args) {
         int amount = args.length >= 1 ? safeParse(args[0], 10) : 10;
         entity.giveExp(amount);
     }
 
     /** clearinv —— 清空背包 */
+    @AICommand(name = "clearinv", desc = "清空自己的背包", category = "物品")
     private void handleClearInv(Player entity) {
         entity.getInventory().clear();
     }
 
     /** rename <新名字> —— 重命名 AI */
+    @AICommand(name = "rename", desc = "修改自己的显示名称", args = "新名字", category = "其他")
     private void handleRename(AIPlayer aiPlayer, String[] args) {
         if (args.length < 1) return;
         String newName = String.join(" ", args);
@@ -872,6 +1033,7 @@ public class CommandExecutor {
     }
 
     /** ride <玩家名> —— 骑乘玩家 */
+    @AICommand(name = "ride", desc = "骑乘目标玩家", args = "玩家名", category = "其他")
     private void handleRide(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -881,6 +1043,7 @@ public class CommandExecutor {
     }
 
     /** carry <玩家名> —— 让目标骑乘 AI */
+    @AICommand(name = "carry", desc = "让目标玩家骑自己", args = "玩家名", category = "其他")
     private void handleCarry(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -890,6 +1053,7 @@ public class CommandExecutor {
     }
 
     /** duplicate —— 复制主手物品 */
+    @AICommand(name = "duplicate", desc = "复制主手物品", category = "物品")
     private void handleDuplicate(Player entity) {
         ItemStack hand = entity.getInventory().getItemInMainHand();
         if (hand == null || hand.getType().isAir()) return;
@@ -897,6 +1061,7 @@ public class CommandExecutor {
     }
 
     /** openinv <玩家名> —— 打开目标玩家背包 */
+    @AICommand(name = "openinv", desc = "打开目标玩家的背包", args = "玩家名", category = "物品")
     private void handleOpenInv(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -906,6 +1071,7 @@ public class CommandExecutor {
     }
 
     /** home —— 传送到出生点 */
+    @AICommand(name = "home", desc = "传送到出生点", category = "其他")
     private void handleHome(Player entity) {
         Location bed = entity.getRespawnLocation();
         if (bed != null) {
@@ -916,6 +1082,7 @@ public class CommandExecutor {
     }
 
     /** top —— 传送到头顶最高处 */
+    @AICommand(name = "top", desc = "传送到头顶最高处", category = "其他")
     private void handleTop(Player entity) {
         Location loc = entity.getLocation();
         int y = entity.getWorld().getHighestBlockYAt(loc);
@@ -924,6 +1091,7 @@ public class CommandExecutor {
     }
 
     /** combo <玩家名> [次数] —— 连续攻击 */
+    @AICommand(name = "combo", desc = "连续攻击玩家（默认 3 次）", args = "玩家名 次数", category = "战斗")
     private void handleCombo(Player entity, String[] args) {
         if (args.length < 1) return;
         Player target = Bukkit.getPlayerExact(args[0]);
@@ -945,6 +1113,7 @@ public class CommandExecutor {
     }
 
     /** emote <表情> —— 表情动作 */
+    @AICommand(name = "emote", desc = "表情动作", args = "bow|clap|laugh|cry|angry", category = "其他")
     private void handleEmote(Player entity, String[] args) {
         if (args.length < 1) return;
         String emote = args[0].toLowerCase();
@@ -960,6 +1129,92 @@ public class CommandExecutor {
             case "angry" -> entity.sendMessage("§c哼！");
             default -> plugin.getNpcAnimator().wave(entity);
         }
+    }
+
+    /** strategy <策略名> <玩家名> —— 执行预设策略（fake_friendly/backstab/trap/feint） */
+    @AICommand(name = "strategy", desc = "执行预设策略", args = "策略名 玩家名", category = "策略")
+    private void handleStrategy(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 2) {
+            plugin.getLogger().warning("strategy 命令参数不足: 需要策略名和目标玩家名");
+            return;
+        }
+        // args[0] = 策略名, args[1] = 目标玩家名
+        String result = plugin.getStrategyEngine().startStrategy(aiPlayer, args[0], args[1]);
+        plugin.getLogger().info("策略执行: " + result);
+    }
+
+    // ===== P4：服务器级控制命令（均受 allow-op-commands 控制，以控制台身份执行） =====
+
+    /** op <玩家名> —— 给玩家 OP 权限 */
+    @AICommand(name = "op", desc = "给玩家 OP 权限", args = "玩家名", op = true, category = "OP")
+    private void handleOp(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "op " + args[0]);
+    }
+
+    /** deop <玩家名> —— 取消玩家 OP 权限 */
+    @AICommand(name = "deop", desc = "取消玩家 OP 权限", args = "玩家名", op = true, category = "OP")
+    private void handleDeop(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "deop " + args[0]);
+    }
+
+    /** ban <玩家名> [原因] —— 封禁玩家 */
+    @AICommand(name = "ban", desc = "封禁玩家", args = "玩家名 [原因]", op = true, category = "OP")
+    private void handleBan(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        StringBuilder cmd = new StringBuilder("ban " + args[0]);
+        if (args.length > 1) {
+            StringBuilder reason = new StringBuilder();
+            for (int i = 1; i < args.length; i++) {
+                if (i > 1) reason.append(" ");
+                reason.append(args[i]);
+            }
+            cmd.append(" ").append(reason);
+        }
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.toString());
+    }
+
+    /** kick <玩家名> [原因] —— 踢出玩家 */
+    @AICommand(name = "kick", desc = "踢出玩家", args = "玩家名 [原因]", op = true, category = "OP")
+    private void handleKick(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 1) return;
+        StringBuilder cmd = new StringBuilder("kick " + args[0]);
+        if (args.length > 1) {
+            StringBuilder reason = new StringBuilder();
+            for (int i = 1; i < args.length; i++) {
+                if (i > 1) reason.append(" ");
+                reason.append(args[i]);
+            }
+            cmd.append(" ").append(reason);
+        }
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.toString());
+    }
+
+    /** tp_all —— 把所有在线玩家传送到 AI 位置 */
+    @AICommand(name = "tp_all", desc = "把所有玩家传送到 AI 位置", op = true, category = "OP")
+    private void handleTpAll(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        Location loc = entity.getLocation();
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (online.equals(entity)) continue;
+            online.teleport(loc);
+        }
+    }
+
+    /** gamemode_player <玩家名> <survival|creative|adventure|spectator> —— 设置指定玩家的游戏模式 */
+    @AICommand(name = "gamemode_player", desc = "设置指定玩家的游戏模式", args = "玩家名 模式", op = true, category = "OP")
+    private void handleGamemodePlayer(Player entity, String[] args) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) return;
+        if (args.length < 2) return;
+        String playerName = args[0];
+        String mode = args[1].toLowerCase();
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                "gamemode " + mode + " " + playerName);
     }
 
     private double safeParseDouble(String s, double def) {

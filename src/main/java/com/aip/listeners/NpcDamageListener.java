@@ -4,6 +4,7 @@ import com.aip.AIPlayerPlugin;
 import com.aip.ai.AIPlayer;
 import com.aip.ai.ConversationManager;
 import com.aip.ai.GameDataCollector;
+import com.aip.ai.MemoryRecord;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -83,6 +84,15 @@ public class NpcDamageListener implements Listener {
 
         // 功能 9：被攻击时情绪下降
         ai.adjustMood(-10);
+
+        // P3：长期记忆——被玩家攻击时记录
+        if (attacker instanceof Player) {
+            String attackerName = attacker.getName();
+            ai.getMemory().addRecord(MemoryRecord.Type.ATTACK,
+                    "被 " + attackerName + " 攻击", attackerName);
+            // P3：玩家档案——记录攻击行为
+            plugin.getPlayerProfileManager().recordAttack((Player) attacker, ai);
+        }
 
         // 1. 立即喊话（被攻击）
         shout(victimId, ai.getName(), HURT_LINES);

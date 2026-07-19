@@ -47,6 +47,26 @@ public class ConversationManager {
         } else if (mood > 70) {
             systemPromptBuilder.append("\n你现在心情愉悦");
         }
+        // P1：自动注入命令文档（替代 config.yml 中删除的硬编码命令清单）
+        String commandDocs = plugin.getCommandExecutor().getCommandDocs();
+        if (commandDocs != null && !commandDocs.isEmpty()) {
+            systemPromptBuilder.append("\n\n").append(commandDocs);
+        }
+        // P2：注入长期目标摘要，让 AI 时时记得自己的战略目标
+        String goalSummary = aiPlayer.getGoalManager().getPromptSummary();
+        if (!goalSummary.isEmpty()) {
+            systemPromptBuilder.append("\n").append(goalSummary);
+        }
+        // P3：注入长期记忆摘要
+        String memorySummary = aiPlayer.getMemory().getPromptSummary();
+        if (!memorySummary.isEmpty()) {
+            systemPromptBuilder.append("\n").append(memorySummary);
+        }
+        // P4：注入队友协同信息，让 AI 知道队友角色与协同目标
+        String teamInfo = plugin.getTeamManager().getTeamPrompt(aiPlayer.getName());
+        if (!teamInfo.isEmpty()) {
+            systemPromptBuilder.append("\n").append(teamInfo);
+        }
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
         // 历史对话
@@ -55,8 +75,18 @@ public class ConversationManager {
         }
 
         // 当前用户消息
+        // P1：若上一轮有命令执行结果，前置反馈让 AI 从失败中学习
+        StringBuilder userContent = new StringBuilder();
+        ExecutionResult lastResult = aiPlayer.getLastCommandResult();
+        if (lastResult != null) {
+            userContent.append("你上一轮 ").append(lastResult.toString())
+                    .append("。请据此调整。\n");
+            // 回流消费后清空，避免重复提示
+            aiPlayer.setLastCommandResult(null);
+        }
         String prefix = speaker != null ? "玩家 " + speaker.getName() + " @你 说：" : "（系统提示）";
-        messages.add(makeMessage("user", prefix + userMessage));
+        userContent.append(prefix).append(userMessage);
+        messages.add(makeMessage("user", userContent.toString()));
 
         if (cfg.isDebug()) {
             plugin.getLogger().info("=== LLM 请求 ===");
