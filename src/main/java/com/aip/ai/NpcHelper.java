@@ -123,23 +123,26 @@ public class NpcHelper {
      */
     public static Object getSkinFromPlayer(Player player) {
         try {
-            // 用 Bukkit 公开 API: Player.getPlayerProfile()
-            // 返回 com.destroystokyo.paper.profile.PlayerProfile，含 getProperties()
+            // Paper API: Player.getPlayerProfile() 返回 PlayerProfile
+            //            PlayerProfile.getProperties() 返回 Set<ProfileProperty>（不是 Map！）
+            //            ProfileProperty 有 getName()/getValue()/getSignature()
             Object bukkitProfile = player.getClass().getMethod("getPlayerProfile").invoke(player);
-            Object props = bukkitProfile.getClass().getMethod("getProperties").invoke(bukkitProfile);
-
             @SuppressWarnings("unchecked")
-            java.util.Collection<Object> textures = (java.util.Collection<Object>)
-                    props.getClass().getMethod("get", String.class).invoke(props, "textures");
-            if (textures == null || textures.isEmpty()) return null;
+            java.util.Set<Object> props = (java.util.Set<Object>)
+                    bukkitProfile.getClass().getMethod("getProperties").invoke(bukkitProfile);
+            if (props == null || props.isEmpty()) return null;
 
-            Object prop = textures.iterator().next();
-            String value = (String) prop.getClass().getMethod("getValue").invoke(prop);
-            String signature = (String) prop.getClass().getMethod("getSignature").invoke(prop);
+            for (Object prop : props) {
+                String name = (String) prop.getClass().getMethod("getName").invoke(prop);
+                if (!"textures".equals(name)) continue;
+                String value = (String) prop.getClass().getMethod("getValue").invoke(prop);
+                String signature = (String) prop.getClass().getMethod("getSignature").invoke(prop);
 
-            Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
-            Constructor<?> ctor = propertyClass.getConstructor(String.class, String.class, String.class);
-            return ctor.newInstance("textures", value, signature);
+                Class<?> propertyClass = Class.forName("com.mojang.authlib.properties.Property");
+                Constructor<?> ctor = propertyClass.getConstructor(String.class, String.class, String.class);
+                return ctor.newInstance("textures", value, signature);
+            }
+            return null;
         } catch (Exception e) {
             throw new RuntimeException("获取玩家皮肤失败: " + rootCause(e), e);
         }

@@ -8,6 +8,7 @@ import com.aip.ai.NpcAnimator;
 import com.aip.commands.AIPCommand;
 import com.aip.config.ConfigManager;
 import com.aip.listeners.ChatListener;
+import com.aip.listeners.NpcDeathListener;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -63,6 +64,7 @@ public class AIPlayerPlugin extends JavaPlugin {
 
         // 5. 注册事件监听器
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+        getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
 
         // 6. 启动自动活动任务
         if (configManager.isAutonomous()) {
