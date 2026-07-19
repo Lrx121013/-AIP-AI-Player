@@ -82,9 +82,10 @@ public class NmsBackend implements NpcBackend {
                     new Object[]{minecraftServer, serverLevel, profile, clientInfo});
 
             // 5. 设置位置和朝向（用 moveTo，比 setPos 更完整）
-            npc.getClass().getMethod("moveTo",
-                            double.class, double.class, double.class, float.class, float.class)
-                    .invoke(npc, loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
+            //    moveTo 定义在 Entity 父类，必须沿继承链查找
+            Method moveTo = findMethod(serverPlayerClass,
+                    "moveTo", double.class, double.class, double.class, float.class, float.class);
+            moveTo.invoke(npc, loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), loc.getPitch());
 
             // 6. 创建无操作的 Connection（SERVERBOUND，仅用于满足构造器参数校验）
             Class<?> packetFlowClass = nms("network.protocol.PacketFlow");
