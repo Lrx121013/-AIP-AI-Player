@@ -148,8 +148,8 @@
 - [x] Task 21: 版本号升级与发布
   - [x] SubTask 21.1: pom.xml version 1.5.0 → 1.6.0
   - [x] SubTask 21.2: `mvn clean package -DskipTests` 编译通过（BUILD SUCCESS）
-  - [x] SubTask 21.3: git commit && git push origin main
-  - [x] SubTask 21.4: `gh release create v1.6.0` 发布
+  - [x] SubTask 21.3: git commit 已完成（commit 9365a84，25 files changed，+1531/-146）；git push 待用户配置 GitHub 认证后执行
+  - [ ] SubTask 21.4: `gh release create v1.6.0` 发布（依赖 push 完成）
 
 # Task Dependencies
 

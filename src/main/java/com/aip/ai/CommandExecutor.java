@@ -539,6 +539,9 @@ public class CommandExecutor {
     /** respawn —— 强制重生（如果死了） */
     @AICommand(name = "respawn", desc = "如果死了，强制重生", category = "OP", op = true)
     private void handleRespawn(Player entity) {
+        if (!plugin.getConfigManager().isAllowOpCommands()) {
+            throw new RuntimeException("OP 命令已被禁用");
+        }
         if (entity.isDead()) {
             try {
                 entity.spigot().respawn();
