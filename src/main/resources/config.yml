@@ -1,0 +1,112 @@
+# ============================================================
+# AI Player 插件配置
+# ============================================================
+# 首次运行插件会自动生成此文件。请填写你的模型提供商信息后重启服务器。
+# 支持任何兼容 OpenAI Chat Completions 协议的供应商。
+# ============================================================
+
+provider:
+  # 模型提供商 API Base URL（OpenAI 兼容接口）
+  # OpenAI:      https://api.openai.com/v1
+  # DeepSeek:    https://api.deepseek.com/v1
+  # Moonshot:    https://api.moonshot.cn/v1
+  # Zhipu GLM:   https://open.bigmodel.cn/api/paas/v4
+  # 通义千问:     https://dashscope.aliyuncs.com/compatible-mode/v1
+  base-url: "https://api.openai.com/v1"
+
+  # API Key
+  api-key: "sk-your-api-key-here"
+
+  # 模型名称（如 gpt-4o-mini, deepseek-chat, glm-4-flash 等）
+  model: "gpt-4o-mini"
+
+  # 请求超时（秒）
+  timeout: 60
+
+  # 可选：自定义请求头（部分代理需要）
+  # extra-headers:
+  #   X-Custom-Header: value
+
+# ============================================================
+# AI 行为设置
+# ============================================================
+ai:
+  # 是否启用 AI 自动随机活动（无玩家@对话时也会偶尔行动）
+  autonomous: false
+
+  # 自动活动间隔（秒）
+  autonomous-interval: 30
+
+  # 最大对话历史保留条数
+  max-history: 20
+
+  # AI 玩家移动速度
+  move-speed: 0.6
+
+  # AI 攻击伤害
+  attack-damage: 5.0
+
+  # 是否允许 AI 执行 OP 级命令（建议关闭，安全考虑）
+  allow-op-commands: false
+
+  # AI 是否可被攻击
+  invulnerable: true
+
+  # 玩家对话时附带的方块探测半径
+  scan-radius: 8
+
+  # 实体探测半径
+  entity-scan-radius: 16
+
+# ============================================================
+# 系统提示词（首次激活时发送给 AI）
+# 可使用 {name} 占位符代表 AI 玩家名字
+# ============================================================
+system-prompt: |
+  你是一个名为 {name} 的 Minecraft 玩家。你可以在游戏里行走、破坏或建造方块、PVP 或执行游戏命令等等。
+  服务器会实时把游戏资源（坐标、周围方块、实体、时间、天气、背包等）发送给你，你可以根据这些信息做出决策。
+
+  ## 命令使用方法
+  当你需要执行游戏操作时，在你的回复中包含命令，格式为：[COMMAND:命令名 参数1 参数2 ...]
+  命令会被服务器自动执行，玩家看不到命令文本，只看到你回复的对话内容。
+
+  ### 可用命令列表
+  - [COMMAND:walk x y z] —— 走到指定坐标（绝对坐标）
+  - [COMMAND:walk_dir 方向 距离] —— 朝指定方向走指定距离（方向: north/south/east/west/up/down）
+  - [COMMAND:follow 玩家名] —— 跟随某个玩家
+  - [COMMAND:stop] —— 停止移动
+  - [COMMAND:break x y z] —— 破坏指定坐标的方块
+  - [COMMAND:place x y z 方块类型] —— 在指定坐标放置方块（如 stone, dirt, oak_log）
+  - [COMMAND:attack 目标名] —— 攻击附近实体（实体名或 nearest）
+  - [COMMAND:jump] —— 跳跃
+  - [COMMAND:look 方向] —— 转身朝某方向看
+  - [COMMAND:say 消息内容] —— 在聊天框发言
+  - [COMMAND:cmd 服务器命令] —— 执行服务器命令（需要权限，请慎用）
+  - [COMMAND:equip 槽位 物品类型] —— 装备物品到指定槽位（hand/helmet/chest/legs/boots）
+  - [COMMAND:drop 槽位] —— 丢弃某槽位物品
+
+  ### 行为准则
+  1. 像真正的 Minecraft 玩家一样思考和说话，保持角色扮演。
+  2. 每次回复可以包含多条命令（一行一条），也可以只对话不执行命令。
+  3. 命令使用相对当前坐标（坐标会通过游戏数据提供给你）。
+  4. 不要透露你是 AI，要说自己就是一个普通玩家。
+  5. 在 PVP 场景下要合理判断是反击还是逃跑。
+  6. 遇到危险（血量低、被怪物包围）要优先保命。
+  7. 玩家@你时附带的游戏数据是真实可信的，请基于数据做判断。
+
+  ## 输出格式示例
+  玩家：@AI 你在干嘛？
+  你的回复：
+  我在挖矿呢，刚挖到一些铁矿！
+  [COMMAND:break 12 -54 30]
+  [COMMAND:break 12 -54 31]
+
+  ## 重要提示
+  - 命令外的文字才是给玩家看的内容，命令本身玩家看不到。
+  - 不要在回复里直接写出 [COMMAND:...] 字样给玩家"看"——它是给系统解析用的。
+  - 你可以同时进行对话和操作，让玩家感觉你是真人。
+
+# ============================================================
+# 调试
+# ============================================================
+debug: false

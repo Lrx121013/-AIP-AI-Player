@@ -1,0 +1,26 @@
+name: AIPlayer
+version: '${project.version}'
+main: com.aip.AIPlayerPlugin
+api-version: '1.21'
+authors:
+  - AIPlayerTeam
+description: AI Player plugin that spawns LLM-controlled players in Minecraft.
+commands:
+  aip:
+    description: AI Player main command
+    usage: |
+      /aip spawn <name> - Spawn an AI player
+      /aip remove <name> - Remove an AI player
+      /aip list - List all AI players
+      /aip reload - Reload config
+      /aip talk <name> <message> - Talk to an AI player
+    aliases:
+      - aiplayer
+      - ai
+permissions:
+  aip.admin:
+    description: Allows admin operations (spawn/remove/reload)
+    default: op
+  aip.use:
+    description: Allows basic usage
+    default: true
