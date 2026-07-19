@@ -123,9 +123,10 @@ public class NpcHelper {
      */
     public static Object getSkinFromPlayer(Player player) {
         try {
-            Object nmsPlayer = player.getClass().getMethod("getHandle").invoke(player);
-            Object profile = nmsPlayer.getClass().getMethod("getGameProfile").invoke(nmsPlayer);
-            Object props = profile.getClass().getMethod("getProperties").invoke(profile);
+            // 用 Bukkit 公开 API: Player.getPlayerProfile()
+            // 返回 com.destroystokyo.paper.profile.PlayerProfile，含 getProperties()
+            Object bukkitProfile = player.getClass().getMethod("getPlayerProfile").invoke(player);
+            Object props = bukkitProfile.getClass().getMethod("getProperties").invoke(bukkitProfile);
 
             @SuppressWarnings("unchecked")
             java.util.Collection<Object> textures = (java.util.Collection<Object>)
@@ -140,7 +141,7 @@ public class NpcHelper {
             Constructor<?> ctor = propertyClass.getConstructor(String.class, String.class, String.class);
             return ctor.newInstance("textures", value, signature);
         } catch (Exception e) {
-            throw new RuntimeException("获取玩家皮肤失败: " + e.getMessage(), e);
+            throw new RuntimeException("获取玩家皮肤失败: " + rootCause(e), e);
         }
     }
 
@@ -149,5 +150,12 @@ public class NpcHelper {
         try (var scanner = new java.util.Scanner(is, StandardCharsets.UTF_8)) {
             return scanner.useDelimiter("\\A").hasNext() ? scanner.next() : "";
         }
+    }
+
+    /** 提取异常根因消息，便于定位 */
+    private static String rootCause(Throwable e) {
+        Throwable t = e;
+        while (t.getCause() != null && t.getCause() != t) t = t.getCause();
+        return t.getClass().getSimpleName() + ": " + t.getMessage();
     }
 }
