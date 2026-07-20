@@ -2,7 +2,7 @@
 
 ## 阶段一：tickAwakening 调度强化
 
-- [ ] **Task 1**: StoryManager.tickAwakening 改造
+- [x] **Task 1**: StoryManager.tickAwakening 改造
   - [ ] SubTask 1.1: 调度间隔 60L → 20L
   - [ ] SubTask 1.2: attack 距离 < 5.0 → < 12.0
   - [ ] SubTask 1.3: 嘲讽/动作概率 30% → 80%
@@ -34,7 +34,7 @@
 
 ## 阶段五：升级 + 发布
 
-- [ ] **Task 5**: 升级到 v2.2.6 + 发布
+- [x] **Task 5**: 升级到 v2.2.6 + 发布
   - [ ] SubTask 5.1: `pom.xml` version 2.2.5 → 2.2.6
   - [ ] SubTask 5.2: `mvn clean package -DskipTests -o` BUILD SUCCESS
   - [ ] SubTask 5.3: git commit + push origin main
