@@ -90,7 +90,12 @@ public class MainQuestExecutor {
         if (stage.getActions() != null) {
             for (String action : stage.getActions()) {
                 try {
-                    plugin.getCommandExecutor().execute(owner, "[COMMAND:" + action + "]");
+                    String resolved = resolvePlaceholders(action);
+                    if (resolved == null) {
+                        // 占位符无法解析（如无玩家），跳过该 action
+                        continue;
+                    }
+                    plugin.getCommandExecutor().execute(owner, "[COMMAND:" + resolved + "]");
                 } catch (Exception e) {
                     plugin.getLogger().warning("MainQuestExecutor 执行动作 [" + action + "] 失败: " + e.getMessage());
                 }
@@ -127,6 +132,117 @@ public class MainQuestExecutor {
     }
 
     /**
+     * 替换 action 字符串中的占位符为实际值。
+     * <p>
+     * 支持的占位符：
+     * <ul>
+     *   <li>&lt;nearest_player&gt; → 范围内最近玩家名（无则返回 null）</li>
+     *   <li>&lt;random_player&gt; → 范围内随机玩家名（无则返回 null）</li>
+     *   <li>&lt;self&gt; → AI 自己的名字</li>
+     *   <li>&lt;nearest_mob&gt; → 范围内最近非玩家生物名（无则返回 null）</li>
+     * </ul>
+     * 若替换后包含任何无法解析的占位符（即使部分替换），返回 null 以跳过该 action。
+     *
+     * @param action 原始 action 字符串（如 "attack &lt;nearest_player&gt;"）
+     * @return 替换后的字符串；无法解析则返回 null
+     */
+    private String resolvePlaceholders(String action) {
+        if (action == null) return null;
+        Player v = owner.getEntity();
+        if (v == null || !v.isValid()) return null;
+
+        String result = action;
+
+        // <nearest_player> → 最近玩家名
+        if (result.contains("<nearest_player>")) {
+            Player nearest = findNearestPlayer(v, false);
+            if (nearest == null) return null;
+            result = result.replace("<nearest_player>", nearest.getName());
+        }
+
+        // <random_player> → 随机玩家名
+        if (result.contains("<random_player>")) {
+            Player random = findNearestPlayer(v, true);
+            if (random == null) return null;
+            result = result.replace("<random_player>", random.getName());
+        }
+
+        // <self> → AI 自己的名字
+        if (result.contains("<self>")) {
+            result = result.replace("<self>", owner.getName());
+        }
+
+        // <nearest_mob> → 最近非玩家生物名
+        if (result.contains("<nearest_mob>")) {
+            org.bukkit.entity.LivingEntity mob = findNearestMob(v);
+            if (mob == null) return null;
+            String mobName = mob.getName();
+            if (mobName == null || mobName.isEmpty()) return null;
+            result = result.replace("<nearest_mob>", mobName);
+        }
+
+        return result;
+    }
+
+    /**
+     * 在 10 格半径内找最近玩家。
+     *
+     * @param v AI 实体
+     * @param random true=随机选一个；false=选最近
+     * @return 玩家实例（排除 owner 自己），无则 null
+     */
+    private Player findNearestPlayer(Player v, boolean random) {
+        java.util.List<Player> candidates = new java.util.ArrayList<>();
+        for (org.bukkit.entity.Entity e : v.getNearbyEntities(10, 10, 10)) {
+            if (e instanceof Player p && !p.getUniqueId().equals(owner.getEntityId())) {
+                candidates.add(p);
+            }
+        }
+        if (candidates.isEmpty()) return null;
+        if (random) {
+            return candidates.get((int) (Math.random() * candidates.size()));
+        }
+        // 最近
+        Player best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (Player p : candidates) {
+            try {
+                double d = v.getLocation().distance(p.getLocation());
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = p;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return best;
+    }
+
+    /**
+     * 在 10 格半径内找最近非玩家生物。
+     *
+     * @param v AI 实体
+     * @return 生物实例（排除玩家），无则 null
+     */
+    private org.bukkit.entity.LivingEntity findNearestMob(Player v) {
+        org.bukkit.entity.LivingEntity best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (org.bukkit.entity.Entity e : v.getNearbyEntities(10, 10, 10)) {
+            if (e instanceof org.bukkit.entity.LivingEntity le && !(le instanceof Player)) {
+                try {
+                    double d = v.getLocation().distance(le.getLocation());
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = le;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
      * 通知 LLM 阶段已完成。
      * <p>
      * 由于 {@code AIPlayer} 暂未暴露 {@code getConversationManager()} 方法，
@@ -148,6 +264,17 @@ public class MainQuestExecutor {
                             : "，主线任务全部完成")
                     + "。";
             plugin.getLogger().info("[MainQuest] " + owner.getName() + ": " + msg);
+
+            // 尝试通知 LLM（getConversationManager 由 Task 1 添加）
+            try {
+                ConversationManager cm = owner.getConversationManager();
+                if (cm != null) {
+                    cm.notifyReflexTrigger(msg);
+                }
+            } catch (Throwable t) {
+                // 通知失败不影响主线任务推进
+                plugin.getLogger().fine("notifyStageComplete LLM 通知失败: " + t.getMessage());
+            }
         } catch (Exception e) {
             plugin.getLogger().warning("notifyStageComplete 异常: " + e.getMessage());
         }
@@ -206,11 +333,17 @@ public class MainQuestExecutor {
                 return elapsedSec >= (long) stage.getTargetProgress() * 10L;
             }
             case COLLECT_ITEMS: {
-                // 简化判定：背包非空视为正在收集，每 tick 进度 +1
-                if (v.getInventory().getSize() > 0 && stage.getCurrentProgress() < stage.getTargetProgress()) {
-                    owner.getMainQuest().incrementProgress(1);
+                // 真实物品总数：遍历 inventory contents 累加 stack.getAmount()
+                org.bukkit.inventory.ItemStack[] contents = v.getInventory().getContents();
+                int itemCount = 0;
+                if (contents != null) {
+                    for (org.bukkit.inventory.ItemStack stack : contents) {
+                        if (stack != null && stack.getType() != org.bukkit.Material.AIR) {
+                            itemCount += stack.getAmount();
+                        }
+                    }
                 }
-                return stage.getCurrentProgress() >= stage.getTargetProgress();
+                return itemCount >= stage.getTargetProgress();
             }
             case REACH_LOCATION:
                 // 暂未实现目标地点判定

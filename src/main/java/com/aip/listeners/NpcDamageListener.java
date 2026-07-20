@@ -35,6 +35,13 @@ public class NpcDamageListener implements Listener {
     /** 每个 NPC 最近一次反击的时间戳（ms），避免被连击时疯狂反击 */
     private final ConcurrentHashMap<UUID, Long> lastCounterAttack = new ConcurrentHashMap<>();
 
+    /** 反击循环打破：每个 NPC 最近一次反击的目标（UUID），避免两个 AI 互打形成死循环 */
+    private final ConcurrentHashMap<UUID, UUID> lastCounterAttackTarget = new ConcurrentHashMap<>();
+    /** 反击循环打破：每个 NPC 最近一次反击的时间戳（ms） */
+    private final ConcurrentHashMap<UUID, Long> lastCounterAttackTargetTime = new ConcurrentHashMap<>();
+    /** 反击循环打破冷却（ms），同一对 damager 在该时间内不重复反击 */
+    private static final long COUNTER_LOOP_BREAK_MS = 1500;
+
     /** 反击冷却（ms） */
     private static final long COUNTER_COOLDOWN_MS = 800;
 
@@ -99,20 +106,32 @@ public class NpcDamageListener implements Listener {
         }
 
         // 1. 立即喊话（被攻击）
-        shout(victimId, ai.getName(), HURT_LINES);
+        shout(ai, HURT_LINES);
 
         // 2. 立即反击（带冷却，避免疯狂反击）
         if (plugin.getConfigManager().isCounterattack()) {
             long now = System.currentTimeMillis();
+            // 1. 基础冷却：800ms 内同 NPC 不重复反击
             Long last = lastCounterAttack.get(victimId);
             if (last == null || now - last > COUNTER_COOLDOWN_MS) {
-                lastCounterAttack.put(victimId, now);
-                // 反击伤害 = 配置的攻击伤害
-                double dmg = plugin.getConfigManager().getAttackDamage();
-                if (attacker == null || !attacker.isValid()) return;
-                if (victim == null || !victim.isValid() || victim.isDead()) return;
-                attacker.damage(dmg, victim);
-                shout(victimId, ai.getName(), COUNTER_LINES);
+                // 2. 反制循环打破：1500ms 内对同一 damager 不重复反击（防止两个 AI 互打）
+                UUID lastTarget = lastCounterAttackTarget.get(victimId);
+                Long lastTargetTime = lastCounterAttackTargetTime.get(victimId);
+                boolean inLoopBreak = lastTarget != null
+                        && lastTarget.equals(attacker.getUniqueId())
+                        && lastTargetTime != null
+                        && now - lastTargetTime < COUNTER_LOOP_BREAK_MS;
+                if (!inLoopBreak) {
+                    lastCounterAttack.put(victimId, now);
+                    lastCounterAttackTarget.put(victimId, attacker.getUniqueId());
+                    lastCounterAttackTargetTime.put(victimId, now);
+                    // 反击伤害 = 配置的攻击伤害
+                    double dmg = plugin.getConfigManager().getAttackDamage();
+                    if (attacker == null || !attacker.isValid()) return;
+                    if (victim == null || !victim.isValid() || victim.isDead()) return;
+                    attacker.damage(dmg, victim);
+                    shout(ai, COUNTER_LINES);
+                }
             }
         }
 
@@ -223,14 +242,19 @@ public class NpcDamageListener implements Listener {
         aiPlayer.setPursuitTask(task);
     }
 
-    /** 随机喊一句话（带冷却） */
-    private void shout(UUID npcId, String npcName, String[] lines) {
+    /** 随机喊一句话（带冷却 + 30 秒去重） */
+    private void shout(AIPlayer ai, String[] lines) {
+        if (ai == null) return;
+        Player entity = ai.getEntity();
+        if (entity == null || !entity.isValid()) return;
         long now = System.currentTimeMillis();
+        UUID npcId = ai.getEntityId();
         Long last = lastShout.get(npcId);
         if (last != null && now - last < SHOUT_COOLDOWN_MS) return;
         lastShout.put(npcId, now);
 
         String line = lines[(int) (Math.random() * lines.length)];
-        Bukkit.broadcastMessage("<" + npcName + "> " + line);
+        // 通过 sayInChat 广播，自动应用 30 秒去重
+        ai.sayInChat(line);
     }
 }

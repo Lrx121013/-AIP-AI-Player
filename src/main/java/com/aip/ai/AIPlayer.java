@@ -75,6 +75,10 @@ public class AIPlayer {
     private String lastKillName;
     /** 当前主线任务阶段开始时间（ms），ELAPSE_TIME 完成条件用 */
     private long stageStartTime;
+    /** 对话管理器（构造时初始化，提供给 MainQuestExecutor 等模块复用） */
+    private ConversationManager conversationManager;
+    /** 主线任务执行器（spawn/revive 时由 AIPlayerManager 创建并设置，remove 时 cancel） */
+    private MainQuestExecutor mainQuestExecutor;
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -87,6 +91,8 @@ public class AIPlayer {
         this.foodLevel = 20;
         this.goalManager = new GoalManager(plugin, this);
         this.reflexManager = new ReflexManager(plugin, this);
+        // 初始化对话管理器，供 MainQuestExecutor 等模块复用
+        this.conversationManager = new ConversationManager(plugin, this);
     }
 
     public String getName() { return name; }
@@ -181,6 +187,18 @@ public class AIPlayer {
     /** 当前阶段开始时间 */
     public long getStageStartTime() { return stageStartTime; }
     public void setStageStartTime(long stageStartTime) { this.stageStartTime = stageStartTime; }
+
+    /** 对话管理器（用于反射规则通知 / 主线任务阶段完成通知） */
+    public ConversationManager getConversationManager() { return conversationManager; }
+    public void setConversationManager(ConversationManager conversationManager) {
+        this.conversationManager = conversationManager;
+    }
+
+    /** 主线任务执行器 */
+    public MainQuestExecutor getMainQuestExecutor() { return mainQuestExecutor; }
+    public void setMainQuestExecutor(MainQuestExecutor mainQuestExecutor) {
+        this.mainQuestExecutor = mainQuestExecutor;
+    }
 
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);

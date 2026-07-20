@@ -37,17 +37,17 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "伪装接近玩家",
                                 MainQuest.CompletionCondition.REACH_PLAYER,
-                                Arrays.asList("approach_nearest_player", "say hi"),
+                                Arrays.asList("approach <nearest_player>", "say 嘿"),
                                 1),
                         new MainQuest.QuestStage(
                                 "获取信任",
                                 MainQuest.CompletionCondition.APPROACH_COUNT,
-                                Arrays.asList("say friendly", "gift_item"),
+                                Arrays.asList("say 我可以帮你", "follow <nearest_player>"),
                                 3),
                         new MainQuest.QuestStage(
                                 "背叛时机",
                                 MainQuest.CompletionCondition.KILL_TARGET,
-                                Arrays.asList("attack nearest_player"),
+                                Arrays.asList("attack <nearest_player>"),
                                 1)
                 );
                 return new MainQuest(id, "潜入渗透", ownerId, stages);
@@ -57,17 +57,17 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "建立据点",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_center", "say 我就在这里建立据点"),
+                                Arrays.asList("walk_dir north 5", "say 这里归我了"),
                                 12),
                         new MainQuest.QuestStage(
                                 "扩张领土",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player", "say 这片地盘归我"),
+                                Arrays.asList("approach <nearest_player>", "say 这是我的地盘"),
                                 18),
                         new MainQuest.QuestStage(
                                 "攻击玩家",
                                 MainQuest.CompletionCondition.KILL_TARGET,
-                                Arrays.asList("attack nearest_player"),
+                                Arrays.asList("attack <nearest_player>"),
                                 1),
                         new MainQuest.QuestStage(
                                 "统治服务器",
@@ -82,17 +82,17 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "假装友好",
                                 MainQuest.CompletionCondition.APPROACH_COUNT,
-                                Arrays.asList("say hi", "gift_item"),
+                                Arrays.asList("approach <nearest_player>", "say 嗨"),
                                 2),
                         new MainQuest.QuestStage(
                                 "挑拨离间",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("say 听说某人在背后说你坏话"),
+                                Arrays.asList("say 听说有人在背后说你坏话"),
                                 10),
                         new MainQuest.QuestStage(
                                 "收服玩家",
                                 MainQuest.CompletionCondition.NONE,
-                                Arrays.asList("say 跟着我没错"),
+                                Arrays.asList("say 跟着我"),
                                 1)
                 );
                 return new MainQuest(id, "欺骗操控", ownerId, stages);
@@ -102,22 +102,22 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "侦察地形",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player"),
+                                Arrays.asList("walk_dir north 8"),
                                 8),
                         new MainQuest.QuestStage(
                                 "建立联盟",
                                 MainQuest.CompletionCondition.APPROACH_COUNT,
-                                Arrays.asList("say hi", "say 我们结盟吧"),
+                                Arrays.asList("approach <random_player>", "say 我们结盟吧"),
                                 2),
                         new MainQuest.QuestStage(
                                 "布局陷阱",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_center", "say 计划进行中"),
+                                Arrays.asList("walk_dir south 10", "say 计划进行中"),
                                 10),
                         new MainQuest.QuestStage(
                                 "总攻",
                                 MainQuest.CompletionCondition.KILL_TARGET,
-                                Arrays.asList("attack nearest_player"),
+                                Arrays.asList("attack <nearest_player>"),
                                 1)
                 );
                 return new MainQuest(id, "战略布局", ownerId, stages);
@@ -127,12 +127,12 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "探索地形",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player"),
+                                Arrays.asList("walk_dir north 6"),
                                 6),
                         new MainQuest.QuestStage(
                                 "寻找资源",
                                 MainQuest.CompletionCondition.NONE,
-                                Arrays.asList("say 这里有什么"),
+                                Arrays.asList("say 这里有什么资源"),
                                 1)
                 );
                 return new MainQuest(id, "自由探索", ownerId, stages);
@@ -142,12 +142,12 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "探索地形",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player"),
+                                Arrays.asList("walk_dir east 6"),
                                 6),
                         new MainQuest.QuestStage(
                                 "寻找资源",
                                 MainQuest.CompletionCondition.NONE,
-                                Arrays.asList("say 这里有什么"),
+                                Arrays.asList("say 这里有什么资源"),
                                 1)
                 );
                 return new MainQuest(id, "自由探索", ownerId, stages);
@@ -157,12 +157,12 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "收集物资",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player"),
+                                Arrays.asList("walk_dir south 5"),
                                 6),
                         new MainQuest.QuestStage(
                                 "建立避难所",
                                 MainQuest.CompletionCondition.NONE,
-                                Arrays.asList("say 这里安全"),
+                                Arrays.asList("say 这里看起来安全"),
                                 1)
                 );
                 return new MainQuest(id, "安全求生", ownerId, stages);
@@ -172,7 +172,7 @@ public class MainQuestFactory {
                         new MainQuest.QuestStage(
                                 "探索地形",
                                 MainQuest.CompletionCondition.ELAPSE_TIME,
-                                Arrays.asList("walk_to_random_player"),
+                                Arrays.asList("walk_dir west 6"),
                                 6),
                         new MainQuest.QuestStage(
                                 "帮助玩家",

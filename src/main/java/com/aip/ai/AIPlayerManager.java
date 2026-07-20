@@ -143,6 +143,11 @@ public class AIPlayerManager {
             p.getPursuitTask().cancel();
             p.setPursuitTask(null);
         }
+        // 取消主线任务执行器
+        if (p.getMainQuestExecutor() != null) {
+            p.getMainQuestExecutor().cancel();
+            p.setMainQuestExecutor(null);
+        }
         Player player = p.getEntity();
         if (player != null && player.isValid()) {
             NpcHelper.removeNpc(player);
@@ -205,6 +210,22 @@ public class AIPlayerManager {
         // revive 时清空旧规则，让 AI 根据新环境重新定义（避免脏状态）
         p.getReflexManager().clearRules();
         p.getReflexManager().startCheckTask();
+        // 复活前先清理旧状态：lastKillName / pursuitTask / 旧 mainQuestExecutor
+        p.setLastKillName(null);
+        if (p.getPursuitTask() != null) {
+            try {
+                p.getPursuitTask().cancel();
+            } catch (IllegalStateException ignored) {
+            }
+            p.setPursuitTask(null);
+        }
+        if (p.getMainQuestExecutor() != null) {
+            p.getMainQuestExecutor().cancel();
+            p.setMainQuestExecutor(null);
+        }
+        // 清理旧 mainQuest 引用
+        p.setMainQuest(null);
+
         // 复活后重新绑定主线任务
         bindMainQuest(p);
         scheduleIntroLine(p);
@@ -217,6 +238,19 @@ public class AIPlayerManager {
             Player player = p.getEntity();
             if (player != null && player.isValid()) {
                 NpcHelper.removeNpc(player);
+            }
+            // 取消主线任务执行器
+            if (p.getMainQuestExecutor() != null) {
+                p.getMainQuestExecutor().cancel();
+                p.setMainQuestExecutor(null);
+            }
+            // 取消追击任务
+            if (p.getPursuitTask() != null) {
+                try {
+                    p.getPursuitTask().cancel();
+                } catch (IllegalStateException ignored) {
+                }
+                p.setPursuitTask(null);
             }
         }
         aiPlayers.clear();
@@ -694,8 +728,10 @@ public class AIPlayerManager {
         if (quest == null) return;
         aiPlayer.setMainQuest(quest);
         aiPlayer.setStageStartTime(System.currentTimeMillis());
-        // 启动主线任务执行器（每 6 秒推进动作）
-        new MainQuestExecutor(plugin, aiPlayer).startFor(aiPlayer);
+        // 创建主线任务执行器并存入 aiPlayer（remove/revive 时 cancel）
+        MainQuestExecutor executor = new MainQuestExecutor(plugin, aiPlayer);
+        aiPlayer.setMainQuestExecutor(executor);
+        executor.startFor(aiPlayer);
     }
 
     /**

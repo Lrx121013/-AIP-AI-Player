@@ -20,6 +20,7 @@ import com.aip.listeners.ChatListener;
 import com.aip.listeners.GuiListener;
 import com.aip.listeners.NpcDamageListener;
 import com.aip.listeners.NpcDeathListener;
+import com.aip.listeners.NpcKillListener;
 import com.aip.listeners.ReflexListener;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -111,6 +112,8 @@ public class AIPlayerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDamageListener(this), this);
+        // 击杀追踪：AI 杀死玩家时设置 lastKillName 让主线任务 KILL_TARGET 可被满足
+        getServer().getPluginManager().registerEvents(new NpcKillListener(this), this);
         // 反射规则监听器：监听伤害 / 玩家攻击 / 方块破坏等事件型触发器
         getServer().getPluginManager().registerEvents(new ReflexListener(this), this);
         if (guiManager != null) {
