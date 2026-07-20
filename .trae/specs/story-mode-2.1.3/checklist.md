@@ -83,10 +83,10 @@
 - [x] MODRINTH.md 添加 v2.1.3 更新日志
 - [x] 旧 config.yml 已处理（villain-mode → story-mode 迁移）
 - [x] mvn clean package -Dmaven.test.skip=true 编译通过（target/AIPlayer-2.1.3.jar 已生成）
-- [ ] git commit 信息正确
-- [ ] git push origin main 成功
-- [ ] git tag v2.1.3 推送成功
-- [ ] gh release create v2.1.3 上传 jar 成功
+- [x] git commit 信息正确（d775e02）
+- [x] git push origin main 成功
+- [x] git tag v2.1.3 推送成功
+- [x] gh release create v2.1.3 上传 jar 成功 → https://github.com/Lrx121013/-AIP-AI-Player/releases/tag/v2.1.3
 
 ## 端到端验证
 - [ ] 玩家击杀 AI 3 次后 AI 觉醒并开始攻击（AWAKENING）
