@@ -1,6 +1,8 @@
 package com.aip.ai;
 
 import com.aip.AIPlayerPlugin;
+import com.aip.story.StoryPhase;
+import com.aip.story.StoryState;
 import com.aip.util.LocationUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -729,7 +731,7 @@ public class CommandExecutor {
         }
     }
 
-    @AICommand(name = "walk", desc = "走到指定坐标（绝对坐标，会自动寻路绕过障碍）", args = "x y z", category = "移动")
+    @AICommand(name = "walk", desc = "走到指定坐标（绝对坐标，会自动寻路绕过障碍；觉醒/空中阶段自动转飞行）", args = "x y z", category = "移动")
     private void handleWalk(AIPlayer aiPlayer, String[] args) {
         if (args.length < 3) return;
         Player entity = aiPlayer.getEntity();
@@ -739,6 +741,14 @@ public class CommandExecutor {
             double y = Double.parseDouble(args[1]);
             double z = Double.parseDouble(args[2]);
             Location target = new Location(entity.getWorld(), x, y, z);
+            // v2.2.2：觉醒/空中阶段改 flyTo（用 setVelocity 飞，不走 Citizens 寻路）
+            StoryState state = aiPlayer.getStoryState();
+            StoryPhase phase = state != null ? state.getCurrentPhase() : null;
+            if (phase == StoryPhase.AWAKENING
+                    || phase == StoryPhase.AERIAL_ASSAULT) {
+                plugin.getAiPlayerManager().flyTo(aiPlayer, target);
+                return;
+            }
             walkTo(aiPlayer, target);
         } catch (NumberFormatException ignored) {
         }

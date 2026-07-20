@@ -42,6 +42,8 @@ public class AIPlayerManager {
     private final Map<UUID, Long> lastTeleportFallback = new ConcurrentHashMap<>();
     /** v2.2.1：每个 AI 连续 navigateTo 失败次数（≥3 时进入 5 秒静默期） */
     private final Map<UUID, Integer> consecutiveFails = new ConcurrentHashMap<>();
+    /** v2.2.2：每个 NPC 是否在飞行模式（觉醒/AERIAL_ASSAULT 时为 true，走 flyTo 而非 navigateTo） */
+    private final Map<UUID, Boolean> npcFlightMode = new ConcurrentHashMap<>();
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -272,12 +274,29 @@ public class AIPlayerManager {
                         }
                         Player entity = p.getEntity();
                         if (entity != null) {
+                            // v2.2.2：先取消 Citizens 导航路径（避免 NPC 走地面）
+                            try { NpcHelper.cancelNavigation(entity); } catch (Exception ignored) {}
+                            // v2.2.2：切到创造模式 + 开飞行
                             entity.setGameMode(org.bukkit.GameMode.CREATIVE);
                             entity.setAllowFlight(true);
                             entity.setFlying(true);
+                            // v2.2.2：玩家在线时瞬移到玩家头顶 10 格
+                            if (killerName != null && !killerName.isEmpty()) {
+                                Player killerPlayer = Bukkit.getPlayerExact(killerName);
+                                if (killerPlayer != null && killerPlayer.isOnline()) {
+                                    Location playerLoc = killerPlayer.getLocation();
+                                    Location flyToLoc = playerLoc.clone().add(0, 10, 0);
+                                    entity.teleport(flyToLoc);
+                                    plugin.getLogger().info("[Story] AI " + p.getName() + " 瞬移到玩家头顶 y+" + 10);
+                                }
+                            }
+                            // v2.2.2：向上推 0.5（确保进入飞行状态）
+                            entity.setVelocity(new Vector(0, 0.5, 0));
+                            // v2.2.2：标记为飞行模式（让 navigateTo/CommandExecutor 知道）
+                            npcFlightMode.put(p.getEntityId(), true);
                         }
                         p.sayInChat("现在，让我来控制战场！");
-                        plugin.getLogger().info("[Story] AI " + p.getName() + " 觉醒切模式：creative + fly + 强制玩家生存");
+                        plugin.getLogger().info("[Story] AI " + p.getName() + " 觉醒切模式：creative + fly + 强制玩家生存 + cancelNavigation");
                     } catch (Exception e) {
                         plugin.getLogger().warning("觉醒 deferred 切模式失败: " + e.getMessage());
                     } finally {
@@ -513,6 +532,23 @@ public class AIPlayerManager {
         UUID id = ai.getEntityId();
         if (id == null) return false;
 
+        // v2.2.2：AWAKENING / AERIAL_ASSAULT 阶段禁用 navigateTo（避免 Citizens 走地面）
+        if (npcFlightMode.getOrDefault(id, false)) {
+            return false;
+        }
+        try {
+            com.aip.story.StoryState state = plugin.getStoryManager() != null
+                    ? plugin.getStoryManager().getState(id) : null;
+            if (state != null) {
+                com.aip.story.StoryPhase phase = state.getCurrentPhase();
+                if (phase == com.aip.story.StoryPhase.AWAKENING
+                        || phase == com.aip.story.StoryPhase.AERIAL_ASSAULT
+                        || phase == com.aip.story.StoryPhase.PVP_DUEL) {
+                    return false;  // 飞行/决斗阶段让 CommandExecutor 走 flyTo
+                }
+            }
+        } catch (Exception ignored) {}
+
         double speed = plugin.getConfigManager().getMoveSpeed();
 
         // v2.2.1：连续失败 ≥3 次后，5 秒内不再 navigateTo
@@ -563,6 +599,23 @@ public class AIPlayerManager {
         UUID id = ai.getEntityId();
         if (id == null) return false;
 
+        // v2.2.2：飞行模式或 AWAKENING/AERIAL_ASSAULT 阶段禁用 fallback teleport
+        if (npcFlightMode.getOrDefault(id, false)) {
+            return false;
+        }
+        try {
+            com.aip.story.StoryState state = plugin.getStoryManager() != null
+                    ? plugin.getStoryManager().getState(id) : null;
+            if (state != null) {
+                com.aip.story.StoryPhase phase = state.getCurrentPhase();
+                if (phase == com.aip.story.StoryPhase.AWAKENING
+                        || phase == com.aip.story.StoryPhase.AERIAL_ASSAULT
+                        || phase == com.aip.story.StoryPhase.PVP_DUEL) {
+                    return false;
+                }
+            }
+        } catch (Exception ignored) {}
+
         // 1.5 秒内不重复 fallback teleport
         long now = System.currentTimeMillis();
         long last = lastTeleportFallback.getOrDefault(id, 0L);
@@ -609,6 +662,57 @@ public class AIPlayerManager {
         if (aiEntityId == null) return;
         lastTeleportFallback.remove(aiEntityId);
         consecutiveFails.remove(aiEntityId);
+    }
+
+    /**
+     * v2.2.2：让 AI 飞行到指定位置（用 setVelocity 直接推，不走 Citizens 寻路）。
+     * <p>
+     * 觉醒/AERIAL_ASSAULT 阶段 AI 必须用此方法而非 navigateTo，因为：
+     *   - Citizens 寻路会强制 NPC 落到地面
+     *   - 觉醒后 AI 应当飞在天上，用 TNT 砸玩家
+     * <p>
+     * 行为：
+     *   - 取消 Citizens 当前路径
+     *   - 用 setVelocity 朝目标方向推
+     *   - 距离 &lt; 2 时不再推（已到达）
+     *   - y &gt; 200 时停止上升
+     *   - y &lt; world.getMinHeight()+5 时向下推
+     */
+    public void flyTo(AIPlayer ai, Location target) {
+        if (ai == null || target == null) return;
+        Player entity = ai.getEntity();
+        if (entity == null || !entity.isValid()) return;
+        if (target.getWorld() == null || entity.getWorld() == null) return;
+        if (!target.getWorld().equals(entity.getWorld())) return;
+
+        // 取消 Citizens 路径
+        try { NpcHelper.cancelNavigation(entity); } catch (Exception ignored) {}
+
+        Location here = entity.getLocation();
+        double dx = target.getX() - here.getX();
+        double dy = target.getY() - here.getY();
+        double dz = target.getZ() - here.getZ();
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        // 距离 < 2 不再推
+        if (dist < 2.0) return;
+
+        // 速度向量：方向 normalize * 0.3
+        double speed = 0.3;
+        Vector vel = new Vector(dx / dist * speed, dy / dist * speed, dz / dist * speed);
+
+        // y 边界检查
+        int minY = entity.getWorld().getMinHeight() + 5;
+        if (here.getY() > 200) {
+            vel.setY(Math.min(vel.getY(), -0.3));  // 强制向下
+        }
+        if (here.getY() < minY) {
+            vel.setY(Math.max(vel.getY(), 0.3));  // 强制向上
+        }
+
+        entity.setVelocity(vel);
+        // 标记飞行模式
+        npcFlightMode.put(ai.getEntityId(), true);
     }
 
     /**

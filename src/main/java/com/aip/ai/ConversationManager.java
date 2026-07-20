@@ -119,11 +119,11 @@ public class ConversationManager {
                 systemPromptBuilder.append("攻击玩家，致他于死地。");
             }
         }
-        // v2.2.1：注入最近对话历史 + "不要重复"提示
+        // v2.2.2：注入最近 5 句（更强制复读机抑制）
         try {
-            java.util.List<String> recent = aiPlayer.getRecentMessages(3);
+            java.util.List<String> recent = aiPlayer.getRecentMessages(5);
             if (recent != null && !recent.isEmpty()) {
-                systemPromptBuilder.append("\n\n【v2.2.1 复读机防护】你最近说过的几句话：\n");
+                systemPromptBuilder.append("\n\n【v2.2.2 复读机防护】你最近说过的 5 句话：\n");
                 for (int i = 0; i < recent.size(); i++) {
                     systemPromptBuilder.append("  ").append(i + 1).append(". ").append(recent.get(i)).append("\n");
                 }

@@ -24,6 +24,7 @@ import com.aip.listeners.NpcDamageListener;
 import com.aip.listeners.NpcDeathListener;
 import com.aip.listeners.NpcKillListener;
 import com.aip.listeners.ReflexListener;
+import com.aip.listeners.StoryModeCommandInterceptor;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -150,6 +151,8 @@ public class AIPlayerPlugin extends JavaPlugin {
         // v2.1.3 故事模式监听器
         getServer().getPluginManager().registerEvents(new com.aip.listeners.AiDeathListener(this), this);
         getServer().getPluginManager().registerEvents(new com.aip.listeners.RulebookListener(this), this);
+        // v2.2.2：故事模式命令拦截器（禁止觉醒后玩家切游戏模式/fly）
+        getServer().getPluginManager().registerEvents(new StoryModeCommandInterceptor(this), this);
         if (guiManager != null) {
             getServer().getPluginManager().registerEvents(new GuiListener(this), this);
         } else {

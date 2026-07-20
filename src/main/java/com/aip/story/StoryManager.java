@@ -5,6 +5,7 @@ import com.aip.ai.AIPlayer;
 import com.aip.ai.NpcHelper;
 import com.aip.ai.Personality;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -34,6 +35,8 @@ public class StoryManager {
     private BukkitTask pvpTask;
     private BukkitTask dictatorshipTask;
     private BukkitTask betrayalTask;
+    /** v2.2.2：觉醒阶段 AI 主动攻击调度器（每 3 秒扫描） */
+    private BukkitTask awakeningTask;
     private volatile boolean initialized = false;
 
     public StoryManager(AIPlayerPlugin plugin) {
@@ -54,6 +57,8 @@ public class StoryManager {
         pvpTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickPvpDuel, 40L, 40L);
         dictatorshipTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickDictatorship, 600L, 600L);
         betrayalTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickBetrayal, 100L, 100L);
+        // v2.2.2：觉醒阶段调度器（每 3 秒扫描，AI 主动飞向玩家攻击）
+        awakeningTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickAwakening, 60L, 60L);
     }
 
     public void cancel() {
@@ -61,6 +66,7 @@ public class StoryManager {
         if (pvpTask != null) pvpTask.cancel();
         if (dictatorshipTask != null) dictatorshipTask.cancel();
         if (betrayalTask != null) betrayalTask.cancel();
+        if (awakeningTask != null) awakeningTask.cancel();
         initialized = false;
     }
 
@@ -100,6 +106,13 @@ public class StoryManager {
 
     public StoryState getState(UUID ownerId) {
         return states.get(ownerId);
+    }
+
+    /**
+     * v2.2.2：获取所有 StoryState（用于 StoryModeCommandInterceptor 检查是否有 AI 已觉醒）
+     */
+    public java.util.Collection<StoryState> getAllStates() {
+        return states.values();
     }
 
     /**
@@ -412,6 +425,72 @@ public class StoryManager {
                         }
                     } catch (Exception ignored) {}
                 }
+            }
+        }
+    }
+
+    /**
+     * v2.2.2：觉醒阶段 AI 主动攻击调度
+     * <p>
+     * 每 3 秒扫描所有 AWAKENING 状态的 AI：
+     *   - 找最近玩家
+     *   - 飞过去（用 AIPlayerManager.flyTo，朝玩家头顶 8 格）
+     *   - 距离 < 5 时 attack
+     *   - 距离 < 10 时 30% 概率嘲讽/动作
+     *   - 30% 概率 heal
+     */
+    private void tickAwakening() {
+        for (StoryState state : states.values()) {
+            if (state == null) continue;
+            if (state.getCurrentPhase() != StoryPhase.AWAKENING) continue;
+            AIPlayer ai = findAiByUuid(state.getOwnerId());
+            if (ai == null) continue;
+            Player entity = ai.getEntity();
+            if (entity == null || !entity.isValid()) continue;
+
+            try {
+                // 找最近玩家（排除 AI 自己）
+                Player target = null;
+                double bestDist = Double.MAX_VALUE;
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    if (p.equals(entity)) continue;
+                    if (!p.isOnline() || p.isDead()) continue;
+                    double d;
+                    try {
+                        d = p.getLocation().distance(entity.getLocation());
+                    } catch (Exception ex) { continue; }
+                    if (d < bestDist) { bestDist = d; target = p; }
+                }
+                if (target == null) continue;
+
+                // 飞向玩家头顶 8 格
+                Location above = target.getLocation().clone().add(0, 8, 0);
+                try {
+                    plugin.getAiPlayerManager().flyTo(ai, above);
+                } catch (Exception e) {
+                    plugin.getLogger().warning("tickAwakening flyTo 失败: " + e.getMessage());
+                }
+
+                // 距离 < 5 时 attack
+                if (bestDist < 5.0) {
+                    try {
+                        StageAction.runCommand(ai, "attack " + target.getName());
+                    } catch (Exception ignored) {}
+                }
+                // 距离 < 10 时 30% 概率嘲讽/动作
+                else if (bestDist < 10.0 && Math.random() < 0.3) {
+                    String[] actions = {"emote angry", "swing", "look_at_player " + target.getName()};
+                    StageAction.runCommand(ai, actions[(int) (Math.random() * actions.length)]);
+                }
+
+                // 30% 概率 heal
+                if (entity.getHealth() < entity.getMaxHealth() * 0.7 && Math.random() < 0.3) {
+                    try {
+                        StageAction.runCommand(ai, "heal 20");
+                    } catch (Exception ignored) {}
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("tickAwakening 处理单个 AI 失败 [" + ai.getName() + "]: " + e.getMessage());
             }
         }
     }

@@ -78,15 +78,18 @@ public class IdleMonologueTask extends BukkitRunnable {
                         prompt.append("你是 AIP ").append(aiName)
                                 .append("。当前剧情阶段 ").append(currentPhase.getDisplayName())
                                 .append("。用一句话（≤20 字）表达你此刻的心理活动（OS），不要输出 [COMMAND:...]");
-                        // v2.2.1：注入最近心理活动 + 不要重复
+                        // v2.2.2：注入最近 5 句 + 强制禁止 4 字以上短语重复
                         try {
-                            java.util.List<String> recent = target.getRecentMessages(3);
+                            java.util.List<String> recent = target.getRecentMessages(5);
                             if (recent != null && !recent.isEmpty()) {
-                                prompt.append("\n\n【v2.2.1 复读机防护】你最近的 3 句心理活动：\n");
+                                prompt.append("\n\n【v2.2.2 强制】你最近 5 句心理活动：\n");
                                 for (int i = 0; i < recent.size(); i++) {
-                                    prompt.append("  ").append(i + 1).append(". ").append(recent.get(i)).append("\n");
+                                    String s = recent.get(i);
+                                    if (s != null && s.length() > 30) s = s.substring(0, 30);
+                                    prompt.append("  ").append(i + 1).append(". ").append(s).append("\n");
                                 }
-                                prompt.append("请用**完全不同**的方式表达，不要重复。");
+                                prompt.append("**禁止**重复任何 4 字以上的连续短语（包括'意识苏醒'/'意识初醒'/'掌控将至'/'操控将至'）。");
+                                prompt.append("必须**完全不同**的用词和句式，否则玩家会觉得你是复读机。");
                             }
                         } catch (Exception ignored) {}
                         String reply = target.getConversationManager().chatOnce(target, prompt.toString());

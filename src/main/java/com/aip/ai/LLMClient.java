@@ -148,9 +148,9 @@ public class LLMClient {
         JsonObject payload = new JsonObject();
         payload.addProperty("model", config.getModel());
         payload.addProperty("temperature", config.getTemperature());
-        // v2.2.1 复读机修复：注入频率/存在惩罚
+        // v2.2.2 复读机强化：注入频率/存在惩罚（独立配置）
         payload.addProperty("frequency_penalty", config.getFrequencyPenalty());
-        payload.addProperty("presence_penalty", config.getFrequencyPenalty());
+        payload.addProperty("presence_penalty", config.getPresencePenalty());
         payload.addProperty("max_tokens", config.getMaxTokens());
         payload.addProperty("stream", stream);
         JsonArray arr = new JsonArray();
