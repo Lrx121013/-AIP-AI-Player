@@ -82,6 +82,22 @@ public class StoryManager {
         states.remove(ownerId);
     }
 
+    /**
+     * v2.1.4 实体 UUID 迁移：AI 死后 Citizens 重新分配新 UUID，把 states map 的 key 从 oldId 改为 newId
+     * <p>
+     * 保留同一 StoryState 对象引用，让死亡计数、剧情阶段、规则之书状态等跨死亡保留。
+     */
+    public void rebindOwner(UUID oldId, UUID newId) {
+        if (oldId == null || newId == null) return;
+        if (oldId.equals(newId)) return;  // 没变就不动
+        StoryState state = states.remove(oldId);
+        if (state != null) {
+            states.put(newId, state);
+            plugin.getLogger().info("[Story] rebindOwner " + oldId + " -> " + newId
+                    + " (phase=" + state.getCurrentPhase() + ", aiDeaths=" + state.getAiDeathCount() + ")");
+        }
+    }
+
     public StoryState getState(UUID ownerId) {
         return states.get(ownerId);
     }

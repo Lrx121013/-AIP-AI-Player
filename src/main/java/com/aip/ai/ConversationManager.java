@@ -235,4 +235,51 @@ public class ConversationManager {
         m.put("content", content);
         return m;
     }
+
+    /**
+     * v2.1.4：一次性 LLM 调用（不写入对话历史、不受 busy 标记长占、可并发安全）。
+     * <p>
+     * 与 {@link #chat} 的区别：
+     *   - 不写入 AIPlayer.conversationHistory（避免复仇对话污染玩家-AI 对话上下文）
+     *   - 不阻塞主线程：内部用非流式 chat() 一次拉完
+     *   - 占用 busy 标记期间不挂起（其他 LLM 调用仍可正常返回 null）
+     *   - 不注入用户对话历史（仅 system + 单轮 user），LLM 只看 prompt 本身的指令
+     * <p>
+     * 供 RevengeLine 这类"系统事件触发"场景使用。调用方应自行处理返回 null/异常。
+     *
+     * @param ai     目标 AI
+     * @param prompt 完整的 prompt 文本（作为 user 消息）
+     * @return LLM 原始回复（含可能的 [COMMAND:...] 标记，调用方负责过滤）
+     */
+    public String chatOnce(AIPlayer ai, String prompt) {
+        if (!plugin.getConfigManager().isConfigured()) return null;
+        // 占 busy 防与正常对话并发——若已被占用直接放弃
+        if (!ai.getBusy().compareAndSet(false, true)) return null;
+        try {
+            List<Map<String, String>> messages = new ArrayList<>();
+
+            // system：极简提示（不注历史、不注任务摘要，避免污染）
+            Map<String, String> sys = new HashMap<>();
+            sys.put("role", "system");
+            sys.put("content", "你是 Minecraft 中的 AI 玩家 " + ai.getName() + "。"
+                    + ai.getPersonality().getPrompt()
+                    + "请基于下面的事件描述，给出一句简短反应（≤30 字，符合你的个性，"
+                    + "不要输出 [COMMAND:...] 命令）。");
+            messages.add(sys);
+
+            // user：单轮 prompt
+            Map<String, String> user = new HashMap<>();
+            user.put("role", "user");
+            user.put("content", prompt);
+            messages.add(user);
+
+            // 非流式一次拉完
+            return plugin.getLlmClient().chat(messages);
+        } catch (Exception e) {
+            plugin.getLogger().warning("chatOnce 异常: " + e.getMessage());
+            return null;
+        } finally {
+            ai.getBusy().set(false);
+        }
+    }
 }

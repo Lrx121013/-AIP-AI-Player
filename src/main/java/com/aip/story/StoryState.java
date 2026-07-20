@@ -10,7 +10,7 @@ import java.util.UUID;
  */
 public class StoryState {
 
-    private final UUID ownerId;
+    private UUID ownerId;  // v2.1.4: 非 final 以支持 reviveRebind 重赋
     private StoryPhase currentPhase;
     /** AI 被玩家击杀次数（用于触发觉醒） */
     private int aiDeathCount;
@@ -102,6 +102,24 @@ public class StoryState {
         this.dictatorshipOrdersGiven = 0;
         this.rulebookDelivered = false;
         this.rulebookRead = false;
+        this.transitionLocked = false;
+    }
+
+    /**
+     * v2.1.4 复活重绑：仅更新 ownerId 和 phaseStartTime，保留所有剧情进度
+     * <p>
+     * AI 死后 NPC 实体 UUID 改变（re-spawn 时 Citizens 重新分配），但故事进度必须保留：
+     *  - aiDeathCount / playerKillCount 累计
+     *  - currentPhase / rulebookDelivered / rulebookRead
+     *  - aerialBombsRemaining / dictatorshipOrdersGiven
+     * <p>
+     * 仅 phaseStartTime 重置为 now，让 3.5 分钟轰炸倒计时、30 秒命令倒计时等从复活后重新开始。
+     */
+    public void reviveRebind(UUID newEntityId) {
+        if (newEntityId == null) return;
+        this.ownerId = newEntityId;  // ownerId 不是 final 才可重新赋值
+        this.phaseStartTime = System.currentTimeMillis();
+        // 死亡瞬间的临时 transition lock 应清空（防旧任务残留）
         this.transitionLocked = false;
     }
 

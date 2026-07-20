@@ -31,6 +31,8 @@ public class AIPlayerManager {
     private final Map<UUID, java.util.Set<String>> greetedPlayers = new ConcurrentHashMap<>();
     /** 每个 NPC 最近一次自动转头看玩家的时间戳（ms），2 秒最多转一次 */
     private final Map<UUID, Long> lastFacePlayer = new ConcurrentHashMap<>();
+    /** v2.1.4：每个 AI 最近一次生成复仇对话的时间戳（ms），5 秒节流 */
+    private final Map<String, Long> lastRevengeTime = new ConcurrentHashMap<>();
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -240,7 +242,8 @@ public class AIPlayerManager {
         } catch (Exception ignored) {
         }
 
-        // 更新 AIPlayer 的 entityId 指向新实体
+        // 更新 AIPlayer 的 entityId 指向新实体（先记住旧 id，留给 StoryState 迁移用）
+        UUID oldEntityId = p.getEntityId();
         p.setEntityId(actualUuid);
         // 清除死亡位置（已复活）
         p.setDeathLocation(null);
@@ -265,14 +268,24 @@ public class AIPlayerManager {
         }
         // 清理旧 mainQuest 引用
         p.setMainQuest(null);
-        // v2.1.3：重置故事模式状态（重新开始故事）
+        // v2.1.4：保留故事模式状态跨死亡（NPC 实体 UUID 变了但剧情进度必须保留）
+        // 旧逻辑是 unregister + register，会把 aiDeathCount 重置为 0 → 死亡次数永远是 1
         try {
             if (plugin.getStoryManager() != null) {
-                plugin.getStoryManager().unregisterStory(p.getEntityId());
-                plugin.getStoryManager().registerStory(p);
+                // 用旧 entityId 查 states（oldEntityId 还是 register 时的 key）
+                com.aip.story.StoryState state = plugin.getStoryManager().getState(oldEntityId);
+                if (state != null) {
+                    // 复用现有 StoryState：把 states map key 从 oldId 改为 newId
+                    // 同时把 StoryState.ownerId 也改成 newId
+                    plugin.getStoryManager().rebindOwner(oldEntityId, actualUuid);
+                    state.reviveRebind(actualUuid);
+                } else {
+                    // 之前没注册过（罕见，比如外部 remove 后 revive），重新注册
+                    plugin.getStoryManager().registerStory(p);
+                }
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("StoryManager 重置失败: " + e.getMessage());
+            plugin.getLogger().warning("StoryManager 复活重绑失败: " + e.getMessage());
         }
 
         // 复活后重新绑定主线任务（仅非故事模式 AI）
@@ -283,7 +296,8 @@ public class AIPlayerManager {
         } else {
             bindMainQuest(p);
         }
-        scheduleIntroLine(p);
+        // v2.1.4：复活走"复仇对话"路径，不再调"我刚刚被生成"的开场白
+        scheduleRevengeLine(p);
         plugin.getLogger().info("AI " + name + " 复活成功");
         return p;
     }
@@ -803,6 +817,32 @@ public class AIPlayerManager {
                 plugin.getLogger().warning("生成开场白异常: " + e.getMessage());
             }
         }, delayTicks);
+    }
+
+    /**
+     * v2.1.4：复活后延迟生成"复仇对话"。
+     * <p>
+     * 与 {@link #scheduleIntroLine} 的区别：
+     *   - 这是"我刚被击杀然后复活"的事件，不是"我刚被生成到这个世界"
+     *   - 内部会按当前 StoryPhase 构造不同 prompt（觉醒/轰炸/PVP/制度/独裁/背叛）
+     *   - 节流 5 秒：避免连续多次复活刷屏
+     *   - 仅在 StoryState != null 且 != COMPLETED 时才生成
+     */
+    public void scheduleRevengeLine(AIPlayer aiPlayer) {
+        if (aiPlayer == null) return;
+        if (!plugin.getConfigManager().isConfigured()) return;
+        // StoryState 缺失或剧情完结 → 不生成
+        com.aip.story.StoryState state = aiPlayer.getStoryState();
+        if (state == null) return;
+        if (state.getCurrentPhase() == com.aip.story.StoryPhase.COMPLETED) return;
+        // 5 秒节流
+        String key = aiPlayer.getName().toLowerCase();
+        long now = System.currentTimeMillis();
+        Long last = lastRevengeTime.get(key);
+        if (last != null && now - last < 5_000L) return;
+        lastRevengeTime.put(key, now);
+        // 延迟 1 秒（让玩家先看到 AI 复活实体），再交给 RevengeLine 处理
+        RevengeLine.generateAndSay(plugin, aiPlayer, null, 20L);
     }
 
     /**

@@ -60,6 +60,23 @@ public class NpcDeathListener implements Listener {
         }
         ai.getDeathLog().add(new DeathRecord(System.currentTimeMillis(), cause, killer));
 
+        // v2.1.4：死亡瞬间立即清理短期任务，避免复活前还在执行旧任务
+        try {
+            ai.setLastKillName(null);
+            if (ai.getPursuitTask() != null) {
+                try {
+                    ai.getPursuitTask().cancel();
+                } catch (IllegalStateException ignored) {
+                }
+                ai.setPursuitTask(null);
+            }
+            if (ai.getMainQuestExecutor() != null) {
+                ai.getMainQuestExecutor().cancel();
+                ai.setMainQuestExecutor(null);
+            }
+        } catch (Exception ignored) {
+        }
+
         // P3：长期记忆——记录死亡事件
         String killerNameForMemory;
         try {
@@ -88,11 +105,20 @@ public class NpcDeathListener implements Listener {
         // P2：NPC 死亡后 5 秒（100 tick）自动复活，保留对话历史/个性/记忆
         if (plugin.getConfigManager().isAutoRevive()) {
             final String aiName = name;
+            final String finalKiller = killer;
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 try {
                     com.aip.ai.AIPlayer revived = plugin.getAiPlayerManager().revive(aiName);
                     if (revived != null) {
                         plugin.getLogger().info("AI " + aiName + " 已自动复活");
+                        // v2.1.4：复活后生成复仇对话（带 killer 名）
+                        try {
+                            org.bukkit.entity.Player killerPlayer = finalKiller != null
+                                    ? Bukkit.getPlayerExact(finalKiller) : null;
+                            com.aip.ai.RevengeLine.generateAndSay(
+                                    plugin, revived, killerPlayer, 20L);
+                        } catch (Exception ignored) {
+                        }
                     }
                 } catch (Exception e) {
                     plugin.getLogger().warning("AI " + aiName + " 自动复活失败: " + e.getMessage());
