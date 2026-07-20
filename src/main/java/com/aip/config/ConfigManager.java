@@ -140,6 +140,18 @@ public class ConfigManager {
         return v > 0 ? v : 20;
     }
 
+    /** 空闲漫游间隔（秒），实时读取配置 */
+    public int getIdleWalkInterval() {
+        int v = plugin.getConfig().getInt("ai.idle-walk-interval", 10);
+        return v > 0 ? v : 10;
+    }
+
+    /** 空闲漫游半径（格），实时读取配置 */
+    public int getIdleWalkRadius() {
+        int v = plugin.getConfig().getInt("ai.idle-walk-radius", 8);
+        return v > 0 ? v : 8;
+    }
+
     public boolean isStream() {
         return plugin.getConfig().getBoolean("provider.stream", true);
     }

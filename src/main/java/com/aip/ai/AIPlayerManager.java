@@ -22,10 +22,14 @@ public class AIPlayerManager {
     private final Map<String, AIPlayer> aiPlayers = new ConcurrentHashMap<>();
     private BukkitTask autonomousTask;
     private BukkitTask environmentTask;
+    private BukkitTask idleWalkTask;
+    private BukkitTask facePlayerTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
     /** 每个 NPC 已打招呼的玩家名集合（避免对同一玩家反复打招呼） */
     private final Map<UUID, java.util.Set<String>> greetedPlayers = new ConcurrentHashMap<>();
+    /** 每个 NPC 最近一次自动转头看玩家的时间戳（ms），2 秒最多转一次 */
+    private final Map<UUID, Long> lastFacePlayer = new ConcurrentHashMap<>();
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -251,6 +255,14 @@ public class AIPlayerManager {
             environmentTask.cancel();
             environmentTask = null;
         }
+        if (idleWalkTask != null) {
+            idleWalkTask.cancel();
+            idleWalkTask = null;
+        }
+        if (facePlayerTask != null) {
+            facePlayerTask.cancel();
+            facePlayerTask = null;
+        }
     }
 
     /**
@@ -274,6 +286,117 @@ public class AIPlayerManager {
                 }
             }
         }.runTaskTimer(plugin, ticks, ticks);
+    }
+
+    /**
+     * 启动空闲漫游任务：每隔 idle-walk-interval 秒随机走动一次（不调 LLM）。
+     * <p>
+     * 解决 AI"原地不动"问题：即使 LLM 不主动调用 walk，NPC 也会在 idle-walk-radius
+     * 半径内随机走动，看起来更像真人。
+     */
+    public void startIdleWalkTask() {
+        if (idleWalkTask != null) return;
+        int intervalTicks = plugin.getConfigManager().getIdleWalkInterval() * 20;
+        idleWalkTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (AIPlayer p : aiPlayers.values()) {
+                    try {
+                        idleWalk(p);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("空闲漫游异常: " + e.getMessage());
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, intervalTicks, intervalTicks);
+    }
+
+    /**
+     * 启动自动转头任务：每 2 秒检查一次附近玩家，玩家靠近 4 格内时自动转头看玩家（不调 LLM）。
+     * <p>
+     * 让 NPC 在静止时也显得"有反应"——玩家走近时它会转头看，提升拟人感。
+     */
+    public void startFacePlayerTask() {
+        if (facePlayerTask != null) return;
+        int faceIntervalTicks = 40;  // 2 秒
+        facePlayerTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (AIPlayer p : aiPlayers.values()) {
+                    try {
+                        faceNearbyPlayer(p);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("转头异常: " + e.getMessage());
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, faceIntervalTicks, faceIntervalTicks);
+    }
+
+    /**
+     * 空闲漫游：在 idle-walk-radius 半径内随机选一个目标点，直接调 Citizens navigateTo 走过去。
+     * 不调用 LLM，不与反射规则冲突（正在忙/正在寻路/正在跟随时跳过）。
+     */
+    private void idleWalk(AIPlayer aiPlayer) {
+        Player v = aiPlayer.getEntity();
+        if (v == null || !v.isValid()) return;
+        // 正在 LLM 决策或正在寻路中，跳过
+        if (aiPlayer.getBusy().get()) return;
+        if (NpcHelper.isNavigating(v)) return;
+        // 跟随玩家中，跳过
+        if (aiPlayer.getFollowing() != null) return;
+
+        int radius = plugin.getConfigManager().getIdleWalkRadius();
+        Location loc = v.getLocation();
+        double angle = Math.random() * Math.PI * 2;
+        // 距离 5 到 radius 格之间随机
+        double maxDist = Math.max(5.0, (double) radius);
+        double dist = 5.0 + Math.random() * (maxDist - 5.0);
+        double dx = Math.cos(angle) * dist;
+        double dz = Math.sin(angle) * dist;
+        Location target = loc.clone().add(dx, 0, dz);
+        // 保持当前 Y（避免穿墙下降或飞起来）
+        target.setY(loc.getY());
+
+        // 直接调 Citizens navigateTo（不调 LLM）
+        double speed = plugin.getConfigManager().getMoveSpeed();
+        boolean ok = NpcHelper.navigateTo(v, target, speed);
+        if (!ok) {
+            plugin.getLogger().fine("空闲漫游 navigateTo 失败: " + aiPlayer.getName());
+        }
+        // 同时转头朝向行走方向
+        NpcHelper.faceLocation(v, target);
+    }
+
+    /**
+     * 自发转头：玩家靠近 4 格内时自动转头看玩家（不调 LLM，不打断寻路）。
+     * 每个 NPC 2 秒最多转一次。
+     */
+    private void faceNearbyPlayer(AIPlayer aiPlayer) {
+        Player v = aiPlayer.getEntity();
+        if (v == null || !v.isValid()) return;
+        if (aiPlayer.getBusy().get()) return;
+        if (NpcHelper.isNavigating(v)) return;  // 正在走路时不打断转头
+        UUID uid = aiPlayer.getEntityId();
+        long now = System.currentTimeMillis();
+        Long last = lastFacePlayer.get(uid);
+        if (last != null && now - last < 2000) return;  // 2 秒最多转一次头
+        double radius = 4.0;
+        var nearby = v.getNearbyEntities(radius, radius, radius);
+        Player nearest = null;
+        double nearestDist = Double.MAX_VALUE;
+        for (org.bukkit.entity.Entity e : nearby) {
+            if (e instanceof Player p && !p.equals(v)) {
+                double d = LocationUtil.safeDistance(p.getLocation(), v.getLocation());
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearest = p;
+                }
+            }
+        }
+        if (nearest == null) return;
+        lastFacePlayer.put(uid, now);
+        NpcHelper.faceLocation(v, nearest.getLocation());
     }
 
     private void triggerAutonomousAction(AIPlayer aiPlayer) {

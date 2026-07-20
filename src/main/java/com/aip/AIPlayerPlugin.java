@@ -123,6 +123,10 @@ public class AIPlayerPlugin extends JavaPlugin {
         aiPlayerManager.startAutonomousTask();
         // 始终启动环境感知任务（让 NPC 对附近威胁/玩家立刻反应）
         aiPlayerManager.startEnvironmentTask();
+        // 启动空闲漫游任务（让 AI 不依赖 LLM 也能到处走动，避免原地不动）
+        aiPlayerManager.startIdleWalkTask();
+        // 启动自动转头任务（玩家靠近 4 格内时 AI 自动转头看玩家）
+        aiPlayerManager.startFacePlayerTask();
         // 启动长期任务调度器（功能 5）
         taskManager.start();
 
@@ -161,6 +165,9 @@ public class AIPlayerPlugin extends JavaPlugin {
             if (configManager.isAutonomous()) {
                 aiPlayerManager.startAutonomousTask();
             }
+            aiPlayerManager.startEnvironmentTask();
+            aiPlayerManager.startIdleWalkTask();
+            aiPlayerManager.startFacePlayerTask();
         }
     }
 

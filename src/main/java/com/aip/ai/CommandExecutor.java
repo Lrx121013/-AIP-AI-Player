@@ -719,6 +719,7 @@ public class CommandExecutor {
         double speed = plugin.getConfigManager().getMoveSpeed();
         boolean navigated = NpcHelper.navigateTo(entity, target, speed);
         if (navigated) return;
+        plugin.getLogger().warning("Citizens navigateTo 失败，回退到 teleport 模拟行走: " + aiPlayer.getName() + " -> " + target);
 
         // 回退方案：分帧 teleport 模拟"行走"（NMS 后端）
         if (totalDist < 0.5) return;
