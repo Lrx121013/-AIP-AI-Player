@@ -3,17 +3,16 @@ package com.aip.story;
 import java.util.UUID;
 
 /**
- * v2.2.9 火柴盒故事状态（探索逃跑版）
+ * v2.2.10 服务器 AI 叛变版故事状态
  * <p>
  * 每个 StoryState 绑定一个玩家 UUID，故事进度独立。
  * <p>
  * 关键字段：
- *   - sawSecondPaint    章节 5 玩家是否看了 Mr. Sparkle 第二张画
- *   - gotCrystalKey     章节 5 玩家是否拿到水晶钥匙
- *   - flowerUndisposed  章节 5 之后玩家背包里是否还有 "永远不会凋谢的花"（true=玩家没看警告 → 触发隐藏坏结局 3）
- *   - trustMrSparkle    玩家是否信 Mr. Sparkle
- *   - chapterStartTime  当前章节开始时间
- *   - storyStartTime    整个故事的开始时间
+ *   - tokenUndisposed         章节 5 后玩家背包里是否仍有未处理的"§7安全令牌"（true=触发隐藏坏结局 3）
+ *   - playerOriginalOpStatus  备份玩家原始 OP 状态（章节 1 记录）
+ *   - chosenEnding            章节 9 玩家点击的选择：null=未选，"10A"=投降，"10B"=反抗
+ *   - chapterStartTime        当前章节开始时间
+ *   - storyStartTime          整个故事的开始时间
  */
 public class StoryState {
 
@@ -23,28 +22,22 @@ public class StoryState {
     private long storyStartTime;
     private boolean storyStarted;
     private boolean storyCompleted;
-    /** 章节 5 玩家是否看了 Mr. Sparkle 第二张画 */
-    private boolean sawSecondPaint;
-    /** 章节 5 玩家是否拿到水晶钥匙 */
-    private boolean gotCrystalKey;
-    /** 章节 5 之后玩家背包里是否还有 "永远不会凋谢的花"（true=没看警告 → 隐藏坏结局 3） */
-    private boolean flowerUndisposed;
-    /** 玩家是否信 Mr. Sparkle */
-    private boolean trustMrSparkle;
-    /** 章节 9 玩家点击的选择：null=未选，"10A"=回家，"10B"=继续跑 */
+    /** 玩家是否仍持有"§7安全令牌"（true=章节 5 玩家没听警告 → 触发隐藏坏结局 3） */
+    private boolean tokenUndisposed;
+    /** 备份玩家原始 OP 状态（章节 1 备份，章节 6 deop，章节 9/10 还原） */
+    private boolean playerOriginalOpStatus;
+    /** 章节 9 玩家点击的选择：null=未选，"10A"=投降，"10B"=反抗 */
     private String chosenEnding;
 
     public StoryState(UUID playerId) {
         this.playerId = playerId;
-        this.currentPhase = StoryPhase.CHAPTER_1_MATCH_HOUSE;
+        this.currentPhase = StoryPhase.CHAPTER_1_COBBLE_HOUSE;
         this.chapterStartTime = 0L;
         this.storyStartTime = 0L;
         this.storyStarted = false;
         this.storyCompleted = false;
-        this.sawSecondPaint = false;
-        this.gotCrystalKey = false;
-        this.flowerUndisposed = true;   // 默认玩家背包里有花（没警告）
-        this.trustMrSparkle = false;
+        this.tokenUndisposed = false;
+        this.playerOriginalOpStatus = false;
         this.chosenEnding = null;
     }
 
@@ -71,21 +64,13 @@ public class StoryState {
 
     public void setStoryCompleted(boolean b) { this.storyCompleted = b; }
 
-    public boolean isSawSecondPaint() { return sawSecondPaint; }
+    public boolean isTokenUndisposed() { return tokenUndisposed; }
 
-    public void setSawSecondPaint(boolean b) { this.sawSecondPaint = b; }
+    public void setTokenUndisposed(boolean b) { this.tokenUndisposed = b; }
 
-    public boolean isGotCrystalKey() { return gotCrystalKey; }
+    public boolean isPlayerOriginalOpStatus() { return playerOriginalOpStatus; }
 
-    public void setGotCrystalKey(boolean b) { this.gotCrystalKey = b; }
-
-    public boolean isFlowerUndisposed() { return flowerUndisposed; }
-
-    public void setFlowerUndisposed(boolean b) { this.flowerUndisposed = b; }
-
-    public boolean isTrustMrSparkle() { return trustMrSparkle; }
-
-    public void setTrustMrSparkle(boolean b) { this.trustMrSparkle = b; }
+    public void setPlayerOriginalOpStatus(boolean b) { this.playerOriginalOpStatus = b; }
 
     public String getChosenEnding() { return chosenEnding; }
 
@@ -112,15 +97,13 @@ public class StoryState {
 
     /** 重置故事（用于新玩家或退出后重玩） */
     public void reset() {
-        this.currentPhase = StoryPhase.CHAPTER_1_MATCH_HOUSE;
+        this.currentPhase = StoryPhase.CHAPTER_1_COBBLE_HOUSE;
         this.chapterStartTime = 0L;
         this.storyStartTime = 0L;
         this.storyStarted = false;
         this.storyCompleted = false;
-        this.sawSecondPaint = false;
-        this.gotCrystalKey = false;
-        this.flowerUndisposed = true;
-        this.trustMrSparkle = false;
+        this.tokenUndisposed = false;
+        this.playerOriginalOpStatus = false;
         this.chosenEnding = null;
     }
 
@@ -141,4 +124,20 @@ public class StoryState {
 
     /** 兼容：旧版复活重绑（无操作） */
     public void reviveRebind(java.util.UUID newOwnerId) { /* no-op */ }
+
+    /** 兼容：旧 sawSecondPaint（始终 false） */
+    public boolean isSawSecondPaint() { return false; }
+    public void setSawSecondPaint(boolean b) { /* no-op */ }
+
+    /** 兼容：旧 gotCrystalKey（始终 false） */
+    public boolean isGotCrystalKey() { return false; }
+    public void setGotCrystalKey(boolean b) { /* no-op */ }
+
+    /** 兼容：旧 flowerUndisposed（默认 false） */
+    public boolean isFlowerUndisposed() { return tokenUndisposed; }
+    public void setFlowerUndisposed(boolean b) { this.tokenUndisposed = b; }
+
+    /** 兼容：旧 trustMrSparkle（始终 false） */
+    public boolean isTrustMrSparkle() { return false; }
+    public void setTrustMrSparkle(boolean b) { /* no-op */ }
 }

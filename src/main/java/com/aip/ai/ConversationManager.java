@@ -104,10 +104,10 @@ public class ConversationManager {
         systemPromptBuilder.append("你是 Minecraft 中的 AI 玩家。回复要简短自然。多用 [COMMAND:swing] / [COMMAND:jump] / [COMMAND:emote] / [COMMAND:walk_dir] / [COMMAND:look_at_player] 等动作命令，让玩家看到你'在做事情'。");
         if (storyState != null) {
             com.aip.story.StoryPhase p = storyState.getCurrentPhase();
-            // v2.2.7：火柴盒版不再有 AERIAL_ASSAULT / PVP_DUEL / BETRAYAL；改用 CHAPTER_7_CORRIDOR_CHASE / 9_NEGOTIATION
-            if (p == com.aip.story.StoryPhase.CHAPTER_7_CORRIDOR_CHASE) {
-                systemPromptBuilder.append("你正在走廊里追击玩家，保持压迫感。");
-            } else if (p == com.aip.story.StoryPhase.CHAPTER_9_NEGOTIATION) {
+            // v2.2.10 服务器 AI 叛变版：CHAPTER_7_PVP_BATTLE + CHAPTER_9_FINAL_CHOICE
+            if (p == com.aip.story.StoryPhase.CHAPTER_7_PVP_BATTLE) {
+                systemPromptBuilder.append("你正在和玩家 PVP 对决，保持压迫感。");
+            } else if (p == com.aip.story.StoryPhase.CHAPTER_9_FINAL_CHOICE) {
                 systemPromptBuilder.append("你在和玩家谈判，等待 [投降] 或 [反抗] 选择。");
             }
         }

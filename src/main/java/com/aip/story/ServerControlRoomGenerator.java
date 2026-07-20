@@ -6,30 +6,32 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 
 /**
- * v2.2.9：AI 总部生成器（章节 8 - 第二道门：真相）
+ * v2.2.10：服务器控制室生成器（章节 4 - 控制室）
  * <p>
  * 50x50 大房间（包含墙壁），内部 9x9 监控屏幕（用 redstone_lamp 模拟）。
- * 中心有一道大铁门（入口）。
+ * 中心有大铁门（入口）。
  * <p>
  * 房间布局：
- *   - 50x50 地板（深色橡木）
- *   - 50x50 墙壁（黑曜石，高 8）
+ *   - 50x50 地板（黑曜石）
+ *   - 50x50 墙壁（圆石，高 20）
  *   - 9x9 监控屏幕（北墙）：redstone_lamp
  *   - 中央 1x1 控制台（附魔台）
  *   - 中心大铁门（南墙）
  *   - 天花板：黑曜石 + 红石灯
+ * <p>
+ * 不同于旧版 AI 总部，这是"服务器控制室"（管理员视角），不是 AI 总部。
  */
-public class AiHeadquartersGenerator {
+public class ServerControlRoomGenerator {
 
     /** 内部宽度（含墙壁） */
     public static final int SIZE = 50;
     /** 内部高度 */
-    public static final int HEIGHT = 8;
+    public static final int HEIGHT = 20;
 
     /**
-     * 在 origin 处生成 AI 总部
-     * @param origin 总部西南角（地板位置）
-     * @return 玩家传送点（入口前）
+     * 在 origin 处生成服务器控制室
+     * @param origin 西南角（地板位置）
+     * @return 玩家传送点（入口前 y+1）
      */
     public static Location generate(Location origin) {
         if (origin == null || origin.getWorld() == null) return null;
@@ -37,7 +39,7 @@ public class AiHeadquartersGenerator {
     }
 
     /**
-     * 在指定世界坐标生成 AI 总部
+     * 在指定世界坐标生成服务器控制室
      * @return 玩家传送点（入口前 y+1）
      */
     public static Location generate(World world, int ox, int oy, int oz) {
@@ -56,11 +58,11 @@ public class AiHeadquartersGenerator {
             }
         }
 
-        // ==== 地板（深色橡木木板）====
+        // ==== 地板（黑曜石）====
         for (int x = 0; x < SIZE; x++) {
             for (int z = 0; z < SIZE; z++) {
                 Block b = world.getBlockAt(bx + x, by, bz + z);
-                b.setType(Material.DARK_OAK_PLANKS);
+                b.setType(Material.OBSIDIAN);
             }
         }
 
@@ -72,30 +74,30 @@ public class AiHeadquartersGenerator {
             }
         }
 
-        // ==== 墙壁（黑曜石）====
+        // ==== 墙壁（圆石）====
         for (int y = 1; y < HEIGHT - 1; y++) {
             for (int x = 0; x < SIZE; x++) {
                 for (int z = 0; z < SIZE; z++) {
                     if (x != 0 && x != SIZE - 1 && z != 0 && z != SIZE - 1) continue;
                     Block b = world.getBlockAt(bx + x, by + y, bz + z);
-                    b.setType(Material.OBSIDIAN);
+                    b.setType(Material.COBBLESTONE);
                 }
             }
         }
 
         // ==== 北墙 9x9 监控屏幕（redstone_lamp）====
-        // 北墙 z = SIZE-1，y = 2 到 4，x = 21 到 29（中心 9 格）
+        // 北墙 z = SIZE-1，y = 8 到 16，x = 21 到 29（中心 9 格）
         for (int x = 21; x <= 29; x++) {
-            for (int y = 2; y <= 4; y++) {
+            for (int y = 8; y <= 16; y++) {
                 Block screen = world.getBlockAt(bx + x, by + y, bz + SIZE - 1);
                 screen.setType(Material.REDSTONE_LAMP);
             }
         }
 
-        // ==== 中央控制台（附魔台 + 红石块装饰）====
+        // ==== 中央控制台（附魔台）====
         Block center = world.getBlockAt(bx + SIZE / 2, by + 1, bz + SIZE / 2);
         center.setType(Material.ENCHANTING_TABLE);
-        // 控制台四角的红色羊毛（标识 AI 控制中心）
+        // 控制台四角的红色羊毛
         int cx = SIZE / 2;
         int cz = SIZE / 2;
         world.getBlockAt(bx + cx + 2, by + 1, bz + cz).setType(Material.RED_WOOL);
@@ -103,7 +105,7 @@ public class AiHeadquartersGenerator {
         world.getBlockAt(bx + cx, by + 1, bz + cz + 2).setType(Material.RED_WOOL);
         world.getBlockAt(bx + cx, by + 1, bz + cz - 2).setType(Material.RED_WOOL);
 
-        // ==== 4 角火把 ====
+        // ==== 4 角红石火把 ====
         world.getBlockAt(bx, by + 1, bz).setType(Material.REDSTONE_TORCH);
         world.getBlockAt(bx + SIZE - 1, by + 1, bz).setType(Material.REDSTONE_TORCH);
         world.getBlockAt(bx, by + 1, bz + SIZE - 1).setType(Material.REDSTONE_TORCH);
@@ -116,8 +118,7 @@ public class AiHeadquartersGenerator {
                 world.getBlockAt(bx + x, by + y, bz).setType(Material.AIR);
             }
         }
-        // 放置大铁门（在 z=-1 外面作为入口门面）
-        // 简化为放置 2 个铁门在入口两侧
+        // 放置 2 个铁门在入口两侧
         try {
             Block door1 = world.getBlockAt(bx + 24, by + 1, bz);
             door1.setType(Material.IRON_DOOR);
@@ -134,7 +135,7 @@ public class AiHeadquartersGenerator {
 
         // ==== 走廊入口连接（南墙外 1 块平台）====
         for (int x = 23; x <= 27; x++) {
-            world.getBlockAt(bx + x, by, bz - 1).setType(Material.DARK_OAK_PLANKS);
+            world.getBlockAt(bx + x, by, bz - 1).setType(Material.STONE_BRICKS);
         }
 
         // 玩家传送点：入口前（南墙外）
@@ -142,7 +143,7 @@ public class AiHeadquartersGenerator {
     }
 
     /**
-     * 清除 AI 总部
+     * 清除服务器控制室
      */
     public static void clear(Location origin) {
         if (origin == null || origin.getWorld() == null) return;

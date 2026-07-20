@@ -290,6 +290,11 @@ public class AIPlayerPlugin extends JavaPlugin {
         return storyManager;
     }
 
+    /** 兼容旧 API：返回 AIPlayerManager */
+    public AIPlayerManager getAIManager() {
+        return aiPlayerManager;
+    }
+
     /** v2.2.0：威胁台词模板 */
     public CommandDocsProvider getCommandDocsProvider() {
         return commandDocsProvider;

@@ -16,9 +16,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * v2.2.9：火柴盒故事独立命令 /aistory（别名 /aiquest）
+ * v2.2.10：服务器 AI 叛变版独立命令 /aistory（别名 /aiquest）
  * <p>
- * 探索逃跑版 12 章节剧情。用法：
+ * 11 章节剧情。用法：
  *   /aistory                  —— 开启故事（需 aip.admin 权限）
  *   /aistory exit             —— 退出故事（仅章节 1-3 可中途退出）
  *   /aistory status           —— 查看当前章节与剩余时间
@@ -81,8 +81,8 @@ public class AistoryCommand implements CommandExecutor, TabCompleter {
             player.sendMessage("§c无法开启故事，请稍后再试。");
             return;
         }
-        player.sendMessage("§6[AI 故事] §a火柴盒故事已开启！/aistory status 查看当前章节。");
-        player.sendMessage("§7第一章节：火柴盒。Eve 和 Mr. Sparkle 正在火柴盒外等待…");
+        player.sendMessage("§6[AI 故事] §a服务器 AI 叛变版故事已开启！/aistory status 查看当前章节。");
+        player.sendMessage("§7第一章节：圆石小屋。Alex 正在门口等待…");
     }
 
     /**
@@ -97,9 +97,9 @@ public class AistoryCommand implements CommandExecutor, TabCompleter {
         }
         StoryPhase p = s.getCurrentPhase();
         // 仅 CHAPTER_1/2/3 可中途退出；章节 4+ 不可退出（玩家已卷入剧情）
-        if (p != StoryPhase.CHAPTER_1_MATCH_HOUSE
-                && p != StoryPhase.CHAPTER_2_DOOR_KNOCK
-                && p != StoryPhase.CHAPTER_3_AI_VISITOR) {
+        if (p != StoryPhase.CHAPTER_1_COBBLE_HOUSE
+                && p != StoryPhase.CHAPTER_2_ANOMALY_LOG
+                && p != StoryPhase.CHAPTER_3_ALEX_VISIT) {
             player.sendMessage("§c故事无法中途退出。你已经进入 §4" + p.getDisplayName() + "§c 阶段。");
             return;
         }
@@ -134,7 +134,7 @@ public class AistoryCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(Player player) {
         player.sendMessage("§6===== /aistory 用法 =====");
-        player.sendMessage("§e/aistory §7- 开启火柴盒探索逃跑版故事（12 章节）");
+        player.sendMessage("§e/aistory §7- 开启服务器 AI 叛变版故事（11 章节）");
         player.sendMessage("§e/aistory exit §7- 退出故事（仅章节 1-3）");
         player.sendMessage("§e/aistory status §7- 查看当前章节与剩余时间");
     }

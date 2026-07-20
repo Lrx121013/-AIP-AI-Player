@@ -22,7 +22,7 @@ import org.bukkit.inventory.ItemStack;
  *   - 走廊尽头（西侧）巨型铁门
  *   - 走廊入口（东侧）开放
  * <p>
- * TNT 实际召唤由 EveNPC.startTntBombing() 的 BukkitTask 负责（每 2 秒召唤一个 TNT），
+ * TNT 实际召唤由 AlexNPC.startTntBombing() 的 BukkitTask 负责（每 2 秒召唤一个 TNT），
  * StoryManager 在 Chapter 8 启动这个 task，Chapter 9 取消。
  */
 public class CorridorGenerator {
