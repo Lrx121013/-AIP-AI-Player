@@ -163,4 +163,34 @@ public class ConfigManager {
     public double getTemperature() {
         return plugin.getConfig().getDouble("provider.temperature", 0.7);
     }
+
+    /** 是否启用主线任务系统，实时读取配置 */
+    public boolean isMainQuestEnabled() {
+        return plugin.getConfig().getBoolean("ai.main-quest.enabled", true);
+    }
+
+    /** 主线任务执行器间隔（ticks），实时读取配置 */
+    public int getQuestExecutorInterval() {
+        return plugin.getConfig().getInt("ai.main-quest.executor-interval", 120);
+    }
+
+    /** 卡住检查间隔（ticks），实时读取配置 */
+    public int getStuckCheckInterval() {
+        return plugin.getConfig().getInt("ai.main-quest.stuck-check-interval", 80);
+    }
+
+    /** 多久不动算卡住（毫秒），实时读取配置 */
+    public long getStuckThresholdMs() {
+        return plugin.getConfig().getLong("ai.main-quest.stuck-threshold-ms", 12000L);
+    }
+
+    /** 被攻击后追击持续时长（毫秒），实时读取配置 */
+    public long getPursuitDurationMs() {
+        return plugin.getConfig().getLong("ai.main-quest.pursuit-duration-ms", 15000L);
+    }
+
+    /** spawn 后多久生成开场白（ticks），实时读取配置 */
+    public int getIntroDelayTicks() {
+        return plugin.getConfig().getInt("ai.main-quest.intro-delay-ticks", 20);
+    }
 }

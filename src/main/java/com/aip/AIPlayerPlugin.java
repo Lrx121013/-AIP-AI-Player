@@ -127,6 +127,8 @@ public class AIPlayerPlugin extends JavaPlugin {
         aiPlayerManager.startIdleWalkTask();
         // 启动自动转头任务（玩家靠近 4 格内时 AI 自动转头看玩家）
         aiPlayerManager.startFacePlayerTask();
+        // 启动卡住检查任务（连续 stuck-threshold-ms 未移动则强制 idleWalk）
+        aiPlayerManager.startStuckCheckTask();
         // 启动长期任务调度器（功能 5）
         taskManager.start();
 

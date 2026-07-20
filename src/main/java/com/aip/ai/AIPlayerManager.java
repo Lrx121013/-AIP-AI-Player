@@ -24,6 +24,7 @@ public class AIPlayerManager {
     private BukkitTask environmentTask;
     private BukkitTask idleWalkTask;
     private BukkitTask facePlayerTask;
+    private BukkitTask stuckCheckTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
     /** 每个 NPC 已打招呼的玩家名集合（避免对同一玩家反复打招呼） */
@@ -74,6 +75,8 @@ public class AIPlayerManager {
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
+        bindMainQuest(aiPlayer);
+        scheduleIntroLine(aiPlayer);
         return aiPlayer;
     }
 
@@ -106,6 +109,8 @@ public class AIPlayerManager {
         aiPlayer.getReflexManager().startCheckTask();
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
+        bindMainQuest(aiPlayer);
+        scheduleIntroLine(aiPlayer);
         return aiPlayer;
     }
 
@@ -133,6 +138,11 @@ public class AIPlayerManager {
         p.getGoalManager().cancelAllPursuits();
         // 取消反射规则周期检查任务并清空规则列表，避免任务操作已移除的实体
         p.getReflexManager().cancel();
+        // 取消被攻击后的追击任务
+        if (p.getPursuitTask() != null) {
+            p.getPursuitTask().cancel();
+            p.setPursuitTask(null);
+        }
         Player player = p.getEntity();
         if (player != null && player.isValid()) {
             NpcHelper.removeNpc(player);
@@ -195,6 +205,9 @@ public class AIPlayerManager {
         // revive 时清空旧规则，让 AI 根据新环境重新定义（避免脏状态）
         p.getReflexManager().clearRules();
         p.getReflexManager().startCheckTask();
+        // 复活后重新绑定主线任务
+        bindMainQuest(p);
+        scheduleIntroLine(p);
         plugin.getLogger().info("AI " + name + " 复活成功");
         return p;
     }
@@ -262,6 +275,10 @@ public class AIPlayerManager {
         if (facePlayerTask != null) {
             facePlayerTask.cancel();
             facePlayerTask = null;
+        }
+        if (stuckCheckTask != null) {
+            stuckCheckTask.cancel();
+            stuckCheckTask = null;
         }
     }
 
@@ -331,6 +348,78 @@ public class AIPlayerManager {
                 }
             }
         }.runTaskTimer(plugin, faceIntervalTicks, faceIntervalTicks);
+    }
+
+    /**
+     * 启动卡住检查任务：每 stuck-check-interval 秒检查每个 AI 的位置变化。
+     * 若连续 stuck-threshold-ms 未移动且位置变化 < 1 格，强制触发 idleWalk。
+     */
+    public void startStuckCheckTask() {
+        if (stuckCheckTask != null) return;
+        int intervalTicks = plugin.getConfigManager().getStuckCheckInterval();
+        stuckCheckTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (AIPlayer p : aiPlayers.values()) {
+                    try {
+                        stuckCheck(p);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("卡住检查异常: " + e.getMessage());
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, intervalTicks, intervalTicks);
+    }
+
+    /**
+     * 检查单个 AI 是否卡住，若卡住则强制移动。
+     */
+    private void stuckCheck(AIPlayer aiPlayer) {
+        Player v = aiPlayer.getEntity();
+        if (v == null || !v.isValid()) return;
+        // 正在 LLM 决策、寻路或跟随时，刷新时间不触发
+        if (aiPlayer.getBusy().get()) {
+            aiPlayer.setLastMoveTime(System.currentTimeMillis());
+            aiPlayer.setLastMoveLoc(v.getLocation());
+            return;
+        }
+        if (NpcHelper.isNavigating(v)) {
+            aiPlayer.setLastMoveTime(System.currentTimeMillis());
+            aiPlayer.setLastMoveLoc(v.getLocation());
+            return;
+        }
+        if (aiPlayer.getFollowing() != null) {
+            aiPlayer.setLastMoveTime(System.currentTimeMillis());
+            aiPlayer.setLastMoveLoc(v.getLocation());
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        long lastMove = aiPlayer.getLastMoveTime();
+        // 首次记录：初始化并返回
+        if (lastMove == 0) {
+            aiPlayer.setLastMoveTime(now);
+            aiPlayer.setLastMoveLoc(v.getLocation());
+            return;
+        }
+
+        long elapsed = now - lastMove;
+        Location lastLoc = aiPlayer.getLastMoveLoc();
+        Location curLoc = v.getLocation();
+        double moved = (lastLoc == null || lastLoc.getWorld() == null || !lastLoc.getWorld().equals(curLoc.getWorld()))
+                ? Double.MAX_VALUE : lastLoc.distance(curLoc);
+
+        if (elapsed >= plugin.getConfigManager().getStuckThresholdMs() && moved < 1.0) {
+            // 卡住超过阈值且未移动，强制 idleWalk
+            idleWalk(aiPlayer);
+            aiPlayer.setLastMoveTime(now);
+            aiPlayer.setLastMoveLoc(v.getLocation());
+        } else if (moved >= 1.0) {
+            // 实际移动了，刷新时间
+            aiPlayer.setLastMoveTime(now);
+            aiPlayer.setLastMoveLoc(v.getLocation());
+        }
+        // 否则保持现状（未到阈值）
     }
 
     /**
@@ -593,5 +682,69 @@ public class AIPlayerManager {
     public void clearGreeted(UUID aiUid, String playerName) {
         java.util.Set<String> greeted = greetedPlayers.get(aiUid);
         if (greeted != null) greeted.remove(playerName);
+    }
+
+    /**
+     * 为 AI 绑定主线任务并启动执行器。
+     * 若 main-quest.enabled=false 或 MainQuestFactory 返回 null（无匹配 personality），则跳过。
+     */
+    private void bindMainQuest(AIPlayer aiPlayer) {
+        if (!plugin.getConfigManager().isMainQuestEnabled()) return;
+        MainQuest quest = MainQuestFactory.create(aiPlayer.getPersonality(), aiPlayer);
+        if (quest == null) return;
+        aiPlayer.setMainQuest(quest);
+        aiPlayer.setStageStartTime(System.currentTimeMillis());
+        // 启动主线任务执行器（每 6 秒推进动作）
+        new MainQuestExecutor(plugin, aiPlayer).startFor(aiPlayer);
+    }
+
+    /**
+     * spawn 后延迟生成开场白。
+     * 异步调用 LLM 生成一句话（不超过 30 字，符合个性），过滤 [COMMAND:...] 后回主线程广播。
+     */
+    private void scheduleIntroLine(AIPlayer aiPlayer) {
+        if (!plugin.getConfigManager().isConfigured()) return;
+        int delayTicks = plugin.getConfigManager().getIntroDelayTicks();
+        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            try {
+                generateIntroLine(aiPlayer);
+            } catch (Exception e) {
+                plugin.getLogger().warning("生成开场白异常: " + e.getMessage());
+            }
+        }, delayTicks);
+    }
+
+    /**
+     * 异步生成开场白并广播。
+     */
+    private void generateIntroLine(AIPlayer aiPlayer) throws java.io.IOException {
+        // 构造 LLM 请求
+        java.util.List<java.util.Map<String, String>> messages = new java.util.ArrayList<>();
+        java.util.Map<String, String> sys = new java.util.HashMap<>();
+        sys.put("role", "system");
+        sys.put("content", "你是 Minecraft 中的 AI 玩家 " + aiPlayer.getName()
+            + "。" + aiPlayer.getPersonality().getPrompt()
+            + "你刚刚被生成到这个世界。请说一句开场白，要求：一句话，不超过 30 字，符合你的个性。"
+            + "不要输出 [COMMAND:...] 命令。");
+        messages.add(sys);
+        java.util.Map<String, String> user = new java.util.HashMap<>();
+        user.put("role", "user");
+        user.put("content", "请说一句开场白。");
+        messages.add(user);
+
+        String reply = plugin.getLlmClient().chat(messages);
+        if (reply == null || reply.trim().isEmpty()) return;
+
+        // 过滤 [COMMAND:...] 后回主线程广播
+        String text = reply.replaceAll("\\[COMMAND:[^\\]]+\\]", "").trim();
+        if (text.isEmpty()) return;
+        final String finalText = text;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            boolean broadcast = aiPlayer.sayInChat(finalText);
+            if (broadcast) {
+                // 存入对话历史作为 assistant 第一条
+                aiPlayer.addHistory("assistant", finalText);
+            }
+        });
     }
 }

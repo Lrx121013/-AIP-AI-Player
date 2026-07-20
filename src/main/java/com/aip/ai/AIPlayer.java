@@ -7,9 +7,11 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +61,20 @@ public class AIPlayer {
     private final LongTermMemory memory = new LongTermMemory();
     /** P1：AI 正在思考的忙标记（防重入），原子操作 */
     private final AtomicBoolean busy = new AtomicBoolean(false);
+    /** 主线任务（可为 null，未启用或无匹配 personality 时） */
+    private MainQuest mainQuest;
+    /** 最近发送的消息记录：消息内容（小写、去空格） → 时间戳，用于 30 秒去重 */
+    private final Map<String, Long> recentMessages = new LinkedHashMap<>();
+    /** 上次移动时间戳（ms），卡住检测用 */
+    private long lastMoveTime;
+    /** 上次移动位置，卡住检测用 */
+    private Location lastMoveLoc;
+    /** 被攻击后启动的追击任务（可取消重置） */
+    private BukkitTask pursuitTask;
+    /** 最近杀死的玩家名（主线任务 KILL_TARGET 判定用） */
+    private String lastKillName;
+    /** 当前主线任务阶段开始时间（ms），ELAPSE_TIME 完成条件用 */
+    private long stageStartTime;
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -139,6 +155,33 @@ public class AIPlayer {
     /** P1：忙标记（用于 chat 防重入） */
     public AtomicBoolean getBusy() { return busy; }
 
+    /** 主线任务（可能为 null） */
+    public MainQuest getMainQuest() { return mainQuest; }
+    public void setMainQuest(MainQuest mainQuest) { this.mainQuest = mainQuest; }
+
+    /** 最近发送消息记录（用于去重检查） */
+    public Map<String, Long> getRecentMessages() { return recentMessages; }
+
+    /** 上次移动时间戳 */
+    public long getLastMoveTime() { return lastMoveTime; }
+    public void setLastMoveTime(long lastMoveTime) { this.lastMoveTime = lastMoveTime; }
+
+    /** 上次移动位置 */
+    public Location getLastMoveLoc() { return lastMoveLoc; }
+    public void setLastMoveLoc(Location lastMoveLoc) { this.lastMoveLoc = lastMoveLoc; }
+
+    /** 被攻击后追击任务 */
+    public BukkitTask getPursuitTask() { return pursuitTask; }
+    public void setPursuitTask(BukkitTask pursuitTask) { this.pursuitTask = pursuitTask; }
+
+    /** 最近杀死的玩家名 */
+    public String getLastKillName() { return lastKillName; }
+    public void setLastKillName(String lastKillName) { this.lastKillName = lastKillName; }
+
+    /** 当前阶段开始时间 */
+    public long getStageStartTime() { return stageStartTime; }
+    public void setStageStartTime(long stageStartTime) { this.stageStartTime = stageStartTime; }
+
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);
         return ent instanceof Player ? (Player) ent : null;
@@ -195,12 +238,34 @@ public class AIPlayer {
     }
 
     /**
-     * 把消息以聊天框形式广播（只显示文字，不含命令）
+     * 把消息以聊天框形式广播（只显示文字，不含命令）。
+     * <p>
+     * 30 秒内重复的消息（忽略大小写、首尾空格）会被拒绝广播，避免 AI 重复刷屏。
+     *
+     * @param message 要广播的消息
+     * @return true=已广播；false=被去重拒绝
      */
-    public void sayInChat(String message) {
-        if (message == null || message.trim().isEmpty()) return;
-        String formatted = "<" + name + "> " + message.trim();
+    public boolean sayInChat(String message) {
+        if (message == null || message.trim().isEmpty()) return false;
+        String trimmed = message.trim();
+        String key = trimmed.toLowerCase();
+        long now = System.currentTimeMillis();
+        // 检查 30 秒内是否已发送过相同消息
+        Long lastTs = recentMessages.get(key);
+        if (lastTs != null && now - lastTs < 30000L) {
+            plugin.getLogger().fine("拒绝重复消息：" + trimmed);
+            return false;
+        }
+        // 广播并记录
+        String formatted = "<" + name + "> " + trimmed;
         Bukkit.broadcastMessage(formatted);
+        recentMessages.put(key, now);
+        // 超过 20 条移除最旧
+        while (recentMessages.size() > 20) {
+            String oldest = recentMessages.keySet().iterator().next();
+            recentMessages.remove(oldest);
+        }
+        return true;
     }
 
     /**

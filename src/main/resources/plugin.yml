@@ -36,6 +36,7 @@ commands:
       /aip approve <id> - Approve pending AI command
       /aip reject <id> - Reject pending AI command
       /aip reflex list <ai> - View AI reflex rules
+      /aip quest show <name> - View AI main quest
     aliases:
       - aiplayer
       - ai

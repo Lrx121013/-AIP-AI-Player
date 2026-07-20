@@ -12,6 +12,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -92,6 +94,8 @@ public class NpcDamageListener implements Listener {
                     "被 " + attackerName + " 攻击", attackerName);
             // P3：玩家档案——记录攻击行为
             plugin.getPlayerProfileManager().recordAttack((Player) attacker, ai);
+            // 启动 15 秒追击任务（被玩家攻击后）
+            startPursuit(ai, (Player) attacker);
         }
 
         // 1. 立即喊话（被攻击）
@@ -145,6 +149,78 @@ public class NpcDamageListener implements Listener {
                 plugin.getLogger().warning("NPC 反应采集数据失败: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * 启动被攻击后的追击任务：在 pursuit-duration-ms 内持续追击攻击者。
+     * 若已有追击任务在运行，先取消（重置计时）。
+     *
+     * @param aiPlayer 被攻击的 AI
+     * @param attacker 攻击者玩家
+     */
+    private void startPursuit(AIPlayer aiPlayer, Player attacker) {
+        // 取消旧的追击任务（重置计时）
+        BukkitTask existing = aiPlayer.getPursuitTask();
+        if (existing != null) {
+            try {
+                existing.cancel();
+            } catch (IllegalStateException ignored) {
+                // 任务可能已完成，忽略
+            }
+        }
+
+        final String attackerName = attacker.getName();
+        final long startTime = System.currentTimeMillis();
+        final long durationMs = plugin.getConfigManager().getPursuitDurationMs();
+
+        BukkitTask task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    // 超时自动取消
+                    if (System.currentTimeMillis() - startTime >= durationMs) {
+                        cancel();
+                        aiPlayer.setPursuitTask(null);
+                        return;
+                    }
+                    // AI 实体失效 → 取消
+                    Player v = aiPlayer.getEntity();
+                    if (v == null || !v.isValid()) {
+                        cancel();
+                        aiPlayer.setPursuitTask(null);
+                        return;
+                    }
+                    // 攻击者离线 → 取消
+                    Player target = Bukkit.getPlayerExact(attackerName);
+                    if (target == null || !target.isOnline()) {
+                        cancel();
+                        aiPlayer.setPursuitTask(null);
+                        return;
+                    }
+                    // AI 正在 LLM 决策中 → 跳过本轮（不取消）
+                    if (aiPlayer.getBusy().get()) return;
+
+                    // 计算距离
+                    double dist;
+                    try {
+                        dist = v.getLocation().distance(target.getLocation());
+                    } catch (Exception e) {
+                        return; // 跨世界等异常，跳过本轮
+                    }
+
+                    // 距离 > 4 走向攻击者，≤ 4 攻击
+                    if (dist > 4) {
+                        plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:walk " + attackerName + "]");
+                    } else {
+                        plugin.getCommandExecutor().execute(aiPlayer, "[COMMAND:attack " + attackerName + "]");
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().warning("追击任务异常: " + e.getMessage());
+                }
+            }
+        }.runTaskTimer(plugin, 0L, 20L); // 立即开始，每 20 tick (1 秒) 一次
+
+        aiPlayer.setPursuitTask(task);
     }
 
     /** 随机喊一句话（带冷却） */

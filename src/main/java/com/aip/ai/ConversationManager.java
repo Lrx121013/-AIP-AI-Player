@@ -80,6 +80,13 @@ public class ConversationManager {
         if (!teamInfo.isEmpty()) {
             systemPromptBuilder.append("\n").append(teamInfo);
         }
+        // P5：注入主线任务摘要，让 AI 知道当前阶段和进度
+        String questSummary = aiPlayer.getMainQuest() != null
+                ? aiPlayer.getMainQuest().getPromptSummary()
+                : "";
+        if (!questSummary.isEmpty()) {
+            systemPromptBuilder.append("\n").append(questSummary);
+        }
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
         // 历史对话

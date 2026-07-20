@@ -6,6 +6,7 @@ import com.aip.ai.ConversationManager;
 import com.aip.ai.DeathRecord;
 import com.aip.ai.GameDataCollector;
 import com.aip.ai.Goal;
+import com.aip.ai.MainQuest;
 import com.aip.ai.MemoryRecord;
 import com.aip.ai.NpcHelper;
 import com.aip.ai.Personality;
@@ -107,6 +108,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             }
             // P5 新增子命令：反射规则查看
             case "reflex" -> handleReflex(sender, args);
+            // 主线任务查看
+            case "quest" -> handleQuest(sender, args);
             default -> sendHelp(sender);
         }
         return true;
@@ -1152,6 +1155,39 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // ===== 主线任务查看 =====
+    /** /aip quest show <ai> —— 查看 AI 的主线任务进度 */
+    private void handleQuest(CommandSender sender, String[] args) {
+        if (args.length < 2 || !args[1].equalsIgnoreCase("show")) {
+            sender.sendMessage("§c用法: /aip quest show <ai>");
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage("§c用法: /aip quest show <ai>");
+            return;
+        }
+        String aiName = args[2];
+        AIPlayer ai = plugin.getAiPlayerManager().get(aiName);
+        if (ai == null) {
+            sender.sendMessage("§c找不到 AI: " + aiName);
+            return;
+        }
+        MainQuest quest = ai.getMainQuest();
+        if (quest == null || quest.isCompleted()) {
+            sender.sendMessage("§7" + aiName + " 当前没有进行中的主线任务");
+            return;
+        }
+        MainQuest.QuestStage stage = quest.getCurrentStage();
+        int total = quest.getStages().size();
+        int current = quest.getCurrentStageIndex() + 1;
+        String stageDesc = stage != null ? stage.getDescription() : "未知";
+        int curProgress = stage != null ? stage.getCurrentProgress() : 0;
+        int targetProgress = stage != null ? stage.getTargetProgress() : 0;
+        sender.sendMessage("§a" + aiName + " §r的主线任务：§e" + quest.getTitle()
+                + "§r（阶段 §b" + current + "/" + total + "§r：§7" + stageDesc
+                + "§r，进度 §d" + curProgress + "/" + targetProgress + "§r，§a进行中§r）");
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 0) return java.util.Collections.emptyList();
@@ -1170,7 +1206,7 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin",
                     "history", "personality", "team", "task", "relation", "revive",
                     "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory",
-                    "approve", "reject", "reflex");
+                    "approve", "reject", "reflex", "quest");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")
@@ -1193,6 +1229,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             } else if (sub.equals("reflex")) {
                 // /aip reflex list <ai>
                 result = Arrays.asList("list");
+            } else if (sub.equals("quest")) {
+                // /aip quest show <ai>
+                result = Arrays.asList("show");
             }
         } else if (args.length == 3) {
             String sub = args[0].toLowerCase();
@@ -1228,6 +1267,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                 result = aiNames;
             } else if (sub.equals("reflex") && action.equals("list")) {
                 // /aip reflex list <ai>
+                result = aiNames;
+            } else if (sub.equals("quest") && action.equals("show")) {
+                // /aip quest show <ai>
                 result = aiNames;
             }
         } else if (args.length == 4) {
