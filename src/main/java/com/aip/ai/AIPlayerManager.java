@@ -186,6 +186,8 @@ public class AIPlayerManager {
         // 清理 GameDataCollector 旧缓存，确保下次采集使用新实体
         plugin.getGameDataCollector().invalidateCache(actualUuid);
         // 启动反射规则周期检查任务（幂等：若之前已被 cancel，此处会重新启动）
+        // revive 时清空旧规则，让 AI 根据新环境重新定义（避免脏状态）
+        p.getReflexManager().clearRules();
         p.getReflexManager().startCheckTask();
         plugin.getLogger().info("AI " + name + " 复活成功");
         return p;

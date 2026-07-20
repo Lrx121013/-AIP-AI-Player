@@ -98,16 +98,16 @@ public class ReflexManager {
         return true;
     }
 
-    /** 列出所有规则（人类可读字符串） */
+    /** 列出所有规则（人类可读字符串，冷却用秒显示） */
     public synchronized String listRules() {
         if (rules.isEmpty()) return "（暂无反射规则）";
         StringBuilder sb = new StringBuilder();
         for (ReflexRule r : rules.values()) {
-            sb.append("[").append(r.getId()).append("] ")
+            sb.append("- [").append(r.getId()).append("] ")
               .append(r.getTriggerType()).append(" ")
               .append(r.getCondition() == null ? "" : r.getCondition())
               .append(" → ").append(r.getAction())
-              .append(" (冷却").append(r.getCooldownMs()).append("ms, ")
+              .append(" (冷却").append(String.format("%.1f", r.getCooldownMs() / 1000.0)).append("秒, ")
               .append(r.isEnabled() ? "启用" : "已禁用").append(")\n");
         }
         return sb.toString().trim();
