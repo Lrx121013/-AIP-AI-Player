@@ -220,10 +220,11 @@ public class StoryManager {
         if (origin == null) {
             origin = player.getLocation().clone();
         }
+        // 新火柴盒以 origin 为西南角（7x7）
         Location playerCenter = MatchesHouseGenerator.generate(origin);
         playerMatchHouseOrigin.put(s.getPlayerId(), origin);
 
-        // 镜像生成 Eve 的火柴盒
+        // 镜像生成 Eve 的火柴盒（在东边 10 米）
         Location eveOrigin = generateEveHouse(origin);
         playerEveHouseOrigin.put(s.getPlayerId(), eveOrigin);
 
@@ -232,9 +233,26 @@ public class StoryManager {
             player.teleport(playerCenter);
         }
 
-        // 生成 Mr. Sparkle
+        // 生成 Mr. Sparkle（站在门口内侧，面朝门）
+        // 7x7 火柴盒：门口 z=0, 中心 x=3.5
+        // Mr. Sparkle 站在 z=1（门口内侧一格），y=1（地面上方）
         MrSparkleNPC sparkle = new MrSparkleNPC(plugin);
-        Location sparkleLoc = origin.clone().add(2.5, 1, 4.5);
+        Location sparkleLoc = new Location(
+                origin.getWorld(),
+                origin.getBlockX() + 3.5,
+                origin.getBlockY() + 1,
+                origin.getBlockZ() + 1.5  // 站在门口内侧 1.5 格
+        );
+        // 让 Mr. Sparkle 朝向玩家（玩家在房子中心）
+        Location lookAtPlayer = new Location(
+                origin.getWorld(),
+                origin.getBlockX() + 3.5,
+                origin.getBlockY() + 1,
+                origin.getBlockZ() + 3.5
+        );
+        try {
+            sparkleLoc.setDirection(lookAtPlayer.toVector().subtract(sparkleLoc.toVector()));
+        } catch (Throwable ignored) {}
         sparkle.spawn(sparkleLoc);
         mrSparkleNpcs.put(s.getPlayerId(), sparkle);
 
@@ -320,11 +338,20 @@ public class StoryManager {
     // ============================================================
 
     private void enterChapter3(StoryState s, Player player) {
-        // 生成 Eve NPC
+        // 生成 Eve NPC（站在玩家门口外的平台上）
         Location origin = playerMatchHouseOrigin.get(s.getPlayerId());
-        Location eveLoc = origin != null
-                ? origin.clone().add(2.5, 1, -0.5)
-                : player.getLocation().clone();
+        // 平台在 z=-3 到 z=-1，Eve 站在 z=-2.5（平台中央）
+        Location eveLoc;
+        if (origin != null && origin.getWorld() != null) {
+            eveLoc = new Location(
+                    origin.getWorld(),
+                    origin.getBlockX() + 3.5,
+                    origin.getBlockY() + 1,
+                    origin.getBlockZ() - 2.5
+            );
+        } else {
+            eveLoc = player.getLocation().clone();
+        }
         EveNPC eve = new EveNPC(plugin);
         eve.spawn(eveLoc);
         eveNpcs.put(s.getPlayerId(), eve);

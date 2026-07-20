@@ -48,6 +48,17 @@ public class MrSparkleNPC {
             npc = registry.getClass().getMethod("createNPC", entityTypeClass, String.class)
                     .invoke(registry, playerType, npcName);
 
+            // ⭐⭐⭐ 关键：spawn 之前必须设置 SkinTrait，否则 NPC 完全不可见
+            try {
+                Class<?> skinTraitClass = Class.forName("net.citizensnpcs.trait.SkinTrait");
+                Object skinTrait = npc.getClass().getMethod("getOrAddTrait", Class.class)
+                        .invoke(npc, skinTraitClass);
+                // Mr. Sparkle 用一个温暖的角色皮肤 - "jeb_" 是经典的红色 NPC
+                skinTraitClass.getMethod("setSkinName", String.class).invoke(skinTrait, "jeb_");
+            } catch (Throwable skinEx) {
+                plugin.getLogger().warning("Mr. Sparkle 皮肤设置失败: " + skinEx.getMessage());
+            }
+
             // npc.spawn(loc)
             npc.getClass().getMethod("spawn", Location.class).invoke(npc, loc);
 
@@ -59,6 +70,11 @@ public class MrSparkleNPC {
             // 关闭 protected（玩家可以与 NPC 交互但不能"破坏"它）
             try {
                 npc.getClass().getMethod("setProtected", boolean.class).invoke(npc, true);
+            } catch (Throwable ignored) {}
+
+            // 设置朝向：朝玩家（如果位置有玩家）
+            try {
+                npc.getClass().getMethod("faceLocation", Location.class).invoke(npc, loc.clone().add(0, 0, -3));
             } catch (Throwable ignored) {}
 
             plugin.getLogger().info("[Story] Mr. Sparkle 在 " + loc + " 生成");

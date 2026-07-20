@@ -67,6 +67,17 @@ public class EveNPC {
             npc = registry.getClass().getMethod("createNPC", entityTypeClass, String.class)
                     .invoke(registry, playerType, npcName);
 
+            // ⭐⭐⭐ 关键：spawn 之前必须设置 SkinTrait，否则 NPC 完全不可见
+            // Eve 用"黑暗系"皮肤 - "Dinnerbone" 上下颠倒的皮肤给人诡异感
+            try {
+                Class<?> skinTraitClass = Class.forName("net.citizensnpcs.trait.SkinTrait");
+                Object skinTrait = npc.getClass().getMethod("getOrAddTrait", Class.class)
+                        .invoke(npc, skinTraitClass);
+                skinTraitClass.getMethod("setSkinName", String.class).invoke(skinTrait, "Dinnerbone");
+            } catch (Throwable skinEx) {
+                plugin.getLogger().warning("Eve 皮肤设置失败: " + skinEx.getMessage());
+            }
+
             // npc.spawn(loc)
             npc.getClass().getMethod("spawn", Location.class).invoke(npc, loc);
 
@@ -83,6 +94,11 @@ public class EveNPC {
             // Eve 创建时 setOp(true)，方便后续 deop 玩家 / op 自己
             try {
                 npc.getClass().getMethod("setOp", boolean.class).invoke(npc, true);
+            } catch (Throwable ignored) {}
+
+            // 设置朝向：朝玩家方向
+            try {
+                npc.getClass().getMethod("faceLocation", Location.class).invoke(npc, loc.clone().add(0, 0, 3));
             } catch (Throwable ignored) {}
 
             plugin.getLogger().info("[Story] Eve 在 " + loc + " 生成");
