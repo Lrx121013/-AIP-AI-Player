@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] Task 1: AIPlayer 新增 conversationManager 和 mainQuestExecutor 字段
+- [x] Task 1: AIPlayer 新增 conversationManager 和 mainQuestExecutor 字段
   - [ ] SubTask 1.1: 在 `AIPlayer.java` 构造器中初始化 `this.conversationManager = new ConversationManager(plugin, this);`
   - [ ] SubTask 1.2: 新增字段 `private MainQuestExecutor mainQuestExecutor;` 及 getter/setter
   - [ ] SubTask 1.3: 提供 `getConversationManager()` getter
@@ -39,7 +39,7 @@
   - [ ] SubTask 4.3: `revive(String name)` 中：在重新创建实体后，先 `p.setLastKillName(null);`，若 `p.getPursuitTask() != null` cancel + set null，若 `p.getMainQuestExecutor() != null` cancel + set null，再 `bindMainQuest(p); scheduleIntroLine(p);`
   - [ ] SubTask 4.4: `removeAll` 中遍历所有 AI 取消其 mainQuestExecutor
 
-- [ ] Task 5: NpcDamageListener 反制循环打破 + 改用 sayInChat
+- [x] Task 5: NpcDamageListener 反制循环打破 + 改用 sayInChat
   - [ ] SubTask 5.1: 新增字段 `private final ConcurrentHashMap<UUID, Long> lastCounterAttackTime = new ConcurrentHashMap<>();` 和 `private final ConcurrentHashMap<UUID, UUID> lastCounterAttackTarget = new ConcurrentHashMap<>();`
   - [ ] SubTask 5.2: 在 counter-attack 之前增加检查：若 `lastCounterAttackTarget.get(victimId) == attacker.getUniqueId()` 且距 `lastCounterAttackTime.get(victimId) < 1500ms` → 跳过本次反击
   - [ ] SubTask 5.3: 反击成功后，更新 `lastCounterAttackTime.put(victimId, now)` 和 `lastCounterAttackTarget.put(victimId, attacker.getUniqueId())`
