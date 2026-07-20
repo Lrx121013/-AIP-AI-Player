@@ -133,7 +133,7 @@
 
 ## 阶段八：构建与发布
 
-- [ ] Task 12: 版本号升级与发布
+- [x] Task 12: 版本号升级与发布
   - [ ] SubTask 12.1: pom.xml version 1.7.4 → 1.8.0
   - [ ] SubTask 12.2: MODRINTH.md 添加 v1.8.0 更新日志（主线任务系统、6 项拟人化修复、/aip quest show 命令）
   - [ ] SubTask 12.3: **必须删除旧 config.yml**（system-prompt 大改），下次启动自动重建
