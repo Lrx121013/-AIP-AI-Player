@@ -28,6 +28,32 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class StoryManager {
 
+    // v2.2.5：故事模式预设模板（默认走预设，不调 LLM）
+    public static final String[] TAUNT_PRESETS = {
+            "§c给我下来！",
+            "§c你躲哪去了？",
+            "§c这才是开始。",
+            "§c我会一直飞！",
+            "§c看你能撑多久。"
+    };
+    public static final String[] DICTATE_PRESETS = {
+            "挖 10 个钻石给我",
+            "去地图边界给我建一座塔",
+            "把你所有装备脱下放箱子里",
+            "杀 5 只僵尸来证明你的忠诚",
+            "在主城立一块牌子写'臣服于我'"
+    };
+    public static final String[] KILL_PRESETS = {
+            "故事结束了。我已经统治了这里。",
+            "你输了。",
+            "再见了，玩家。"
+    };
+    public static final String[] SITUATION_PRESETS = {
+            "玩家正在靠近。",
+            "玩家血量告急。",
+            "玩家位置变化。"
+    };
+
     private final AIPlayerPlugin plugin;
     /** ownerId → StoryState 映射 */
     private final Map<UUID, StoryState> states = new ConcurrentHashMap<>();
@@ -155,7 +181,6 @@ public class StoryManager {
                     if (killer != null && killer.isOnline()) {
                         StageAction.runCommand(ai, "attack " + killer.getName());
                     }
-                    notifyLlm(ai, "你的剧情推进：你被 " + killerName + " 击杀了 " + kills + " 次，你已觉醒。你现在要开始攻击他。");
                 }
             }
         }
@@ -191,7 +216,6 @@ public class StoryManager {
                     StageAction.runCommand(ai, "fly on");
                     StageAction.broadcast("§4§l[剧情] §c" + ai.getName() + " §c飞向天空，开始了对 " + victim.getName() + " 的空中轰炸！");
                     StageAction.say(ai, "你躲得够久了，让我从天上解决你！");
-                    notifyLlm(ai, "你的剧情推进：你成功击杀了玩家 " + kills + " 次，现在你飞向天空开始空中轰炸阶段。持续 3.5 分钟，用 TNT 和方块轰炸玩家，玩家必须躲避。");
                 }
             }
         } else if (phase == StoryPhase.PVP_DUEL) {
@@ -212,7 +236,6 @@ public class StoryManager {
                     StageAction.runCommand(ai, "give_rulebook " + victim.getName());
                     StageAction.broadcast("§6§l[剧情] §e" + ai.getName() + " §e杀死了 " + victim.getName() + " " + kills + " 次，递给他一本 §4§lAI 制度之书§e，要求他阅读！");
                     StageAction.say(ai, "你已经输了。这本制度之书你必须读完，否则……");
-                    notifyLlm(ai, "你的剧情推进：你成功击杀了玩家 " + kills + " 次，现在进入制度统治阶段。你已经把一本《AI 制度之书》交给玩家。等待他读完。");
                 }
             }
         }
@@ -232,7 +255,6 @@ public class StoryManager {
             state.setDictatorshipOrdersGiven(0);
             StageAction.broadcast("§6§l[剧情] §e" + reader.getName() + " §e读完了 §4§lAI 制度之书§e。" + ai.getName() + " 开始下达命令！");
             StageAction.say(ai, "很好，你已经读完制度。现在开始执行你的命令。");
-            notifyLlm(ai, "你的剧情推进：玩家已经读完制度。现在进入独裁命令阶段。你将根据意愿给玩家下命令，玩家必须完成，否则会受到惩罚。");
         }
     }
 
@@ -262,7 +284,6 @@ public class StoryManager {
                     entity.setInvulnerable(false);
                     StageAction.broadcast("§6§l[剧情] §e" + ai.getName() + " §e降落在地面，穿上了顶级下界合金，准备与你进行顶级 PVP！");
                     StageAction.say(ai, "是时候正面对决了！");
-                    notifyLlm(ai, "你的剧情推进：空中轰炸 3.5 分钟结束，你降落在地面并装备了顶级下界合金。现在进入 PVP 顶级对决阶段，你需要杀死玩家 2 次。");
                 }
             } else {
                 // 仍在轰炸：找最近玩家发射 TNT
@@ -272,11 +293,17 @@ public class StoryManager {
                     if (target != null) {
                         StageAction.runCommand(ai, "fly_bomb_player " + target.getName());
                         state.setAerialBombsRemaining(remaining - 1);
-                        // v2.2.0：50% 概率 say 嘲讽（sayInChat 内部有 30 秒去重）
+                        // v2.2.5：50% 概率嘲讽（默认从预设随机选；启用 hook 后可由 LLM 异步生成）
                         if (Math.random() < 0.5) {
-                            String[] taunts = {"§c给我下来！", "§c你躲哪去了？", "§c这才是开始。"};
-                            String taunt = taunts[(int) (Math.random() * taunts.length)];
-                            ai.sayInChat(taunt);
+                            llmHookTaunt(ai, llmTaunt -> {
+                                if (llmTaunt != null && !llmTaunt.isEmpty()) {
+                                    ai.sayInChat("§c" + llmTaunt);
+                                } else {
+                                    String[] taunts = {"§c给我下来！", "§c你躲哪去了？", "§c这才是开始。"};
+                                    String taunt = taunts[(int) (Math.random() * taunts.length)];
+                                    ai.sayInChat(taunt);
+                                }
+                            });
                         }
                     }
                 }
@@ -303,6 +330,16 @@ public class StoryManager {
                     StageAction.runCommand(ai, "heal 20");
                     state.setPhaseStartTime(now);  // 刷新节流
                 }
+            }
+
+            // v2.2.5：召唤支援 hook
+            if (entity.getHealth() < entity.getMaxHealth() * 0.3 && Math.random() < 0.5) {
+                llmHookSummonAlly(ai, shouldSummon -> {
+                    if (shouldSummon != null && shouldSummon) {
+                        plugin.getLogger().info("[Story-Hook] " + ai.getName() + " 决定召唤支援（hook 启用）");
+                        // TODO: 实际生成盟军
+                    }
+                });
             }
 
             // 主 AIP 走 walk / attack / 动作
@@ -364,23 +401,38 @@ public class StoryManager {
             state.setDictatorshipOrdersGiven(state.getDictatorshipOrdersGiven() + 1);
             int n = state.getDictatorshipOrdersGiven();
             int max = plugin.getConfigManager().getDictatorshipOrders();
-            // 随机选命令模板
-            String[] templates = {
-                "挖 10 个钻石给我",
-                "去地图边界给我建一座塔",
-                "把你所有装备脱下放箱子里",
-                "杀 5 只僵尸来证明你的忠诚",
-                "在主城立一块牌子写'臣服于 " + ai.getName() + "'"
-            };
-            String order = templates[(n - 1) % templates.length];
-            StageAction.runCommand(ai, "dictate_order " + target.getName() + " " + order);
-            plugin.getLogger().info("[Story] " + ai.getName() + " 独裁命令 " + n + "/" + max + ": " + order);
+            // v2.2.5：默认从预设命令循环；启用 hook 后可由 LLM 异步生成自定义命令
+            final int orderIndex = n;
+            llmHookDictateOrder(ai, orderIndex, llmOrder -> {
+                String order;
+                if (llmOrder != null && !llmOrder.isEmpty()) {
+                    order = llmOrder;
+                } else {
+                    String[] templates = {
+                        "挖 10 个钻石给我",
+                        "去地图边界给我建一座塔",
+                        "把你所有装备脱下放箱子里",
+                        "杀 5 只僵尸来证明你的忠诚",
+                        "在主城立一块牌子写'臣服于 " + ai.getName() + "'"
+                    };
+                    order = templates[(orderIndex - 1) % templates.length];
+                }
+                StageAction.runCommand(ai, "dictate_order " + target.getName() + " " + order);
+                plugin.getLogger().info("[Story] " + ai.getName() + " 独裁命令 " + orderIndex + "/" + max + ": " + order);
+            });
+
+            // v2.2.5：命令执行验证 hook（命令下达后 30 秒后触发，但默认全关）
+            // 实际检测命令完成需要监听玩家行为，v2.2.5 暂不实现
+            llmHookCheckOrder(ai, "当前命令", "玩家执行中", completed -> {
+                if (completed != null) {
+                    plugin.getLogger().info("[Story-Hook] 命令验证 hook 触发 (AI=" + ai.getName() + ", completed=" + completed + ")");
+                }
+            });
 
             if (n >= max) {
                 if (state.transitionTo(StoryPhase.BETRAYAL)) {
                     StageAction.broadcast("§4§l[剧情] §c" + ai.getName() + " §c完成了所有命令的部署……现在开始背叛！");
                     StageAction.say(ai, "你已经完成了我的所有要求。但现在，你没有利用价值了。");
-                    notifyLlm(ai, "你的剧情推进：玩家已经完成了你的所有命令。现在进入背叛阶段。持续 30 秒，不断攻击玩家直到故事结束。");
                 }
             }
         }
@@ -410,7 +462,14 @@ public class StoryManager {
                         StageAction.runCommand(ai, "kill " + target.getName());
                     }
                     StageAction.broadcast("§4§l[剧情] §c" + ai.getName() + " §c完成了它的复仇。整个服务器已被它统治。");
-                    StageAction.say(ai, "故事结束了。我已经统治了这里。");
+                    // v2.2.5：杀玩家遗言 hook
+                    llmHookKillPlayer(ai, lastWords -> {
+                        if (lastWords != null && !lastWords.isEmpty()) {
+                            ai.sayInChat(lastWords);
+                        } else {
+                            ai.sayInChat("故事结束了。我已经统治了这里。");
+                        }
+                    });
                 }
             } else {
                 // 持续攻击玩家
@@ -449,6 +508,8 @@ public class StoryManager {
             if (entity == null || !entity.isValid()) continue;
 
             try {
+                // v2.2.5：局势分析 hook
+                llmHookSituation(ai);
                 // 找最近玩家（排除 AI 自己）
                 Player target = null;
                 double bestDist = Double.MAX_VALUE;
@@ -526,14 +587,155 @@ public class StoryManager {
     }
 
     /**
-     * 向 LLM 异步推送剧情进展（占用 busy 标记）
+     * v2.2.5：7 个 LLM hook 钩子
+     * <p>
+     * 每个 hook 默认走预设（当 ConfigManager.storyLlm* 关闭时），
+     * 仅当用户开启对应 hook 时异步调用 LLM 生成内容。
+     * <p>
+     * 钩子列表：
+     *   - llmHookSituation: 局势分析（异步，结果影响后续动作）
+     *   - llmHookTaunt: 嘲讽台词生成（异步，返回字符串）
+     *   - llmHookSummonAlly: 是否生成支援（异步，返回 boolean）
+     *   - llmHookDictateOrder: 下达命令内容（异步，返回字符串）
+     *   - llmHookCheckOrder: 验证玩家是否完成命令（异步，返回 boolean）
+     *   - llmHookKillPlayer: 杀玩家前最后一句话（异步，返回字符串）
      */
-    private void notifyLlm(AIPlayer ai, String description) {
-        if (ai == null || description == null) return;
-        try {
-            ai.getConversationManager().notifyReflexTrigger(description);
-        } catch (Exception e) {
-            plugin.getLogger().warning("StoryManager.notifyLlm 失败: " + e.getMessage());
+
+    /** Hook 1: 局势分析（异步） */
+    private void llmHookSituation(AIPlayer ai) {
+        if (!plugin.getConfigManager().isStoryLlmSituation()) return;
+        // v2.2.5：异步调用 LLM 分析局势，结果写回 AI 的 strategy 状态
+        // 当前未启用 strategy 状态机，暂记日志
+        if (ai == null) return;
+        plugin.getLogger().info("[Story-Hook] 局势分析 hook 触发 (AI=" + ai.getName() + ")，但 strategy 状态机尚未实现，暂仅记录");
+    }
+
+    /** Hook 2: 嘲讽台词生成（异步） */
+    private void llmHookTaunt(AIPlayer ai, java.util.function.Consumer<String> onResult) {
+        if (!plugin.getConfigManager().isStoryLlmTaunt()) {
+            onResult.accept(null);  // 不启用，让调用方走预设
+            return;
         }
+        // v2.2.5：异步调用 LLM 生成嘲讽
+        if (ai == null) {
+            onResult.accept(null);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String prompt = "你是 " + ai.getName() + "，现在正在飞在天上轰炸玩家。"
+                    + "用一句话（≤20 字）嘲讽玩家，风格要狠且符合你的角色。";
+            String reply = null;
+            try {
+                com.aip.ai.ConversationManager cm = ai.getConversationManager();
+                if (cm != null) {
+                    reply = cm.chatOnce(ai, prompt);
+                }
+            } catch (Exception ignored) {}
+            String finalReply = reply;
+            Bukkit.getScheduler().runTask(plugin, () -> onResult.accept(finalReply));
+        });
+    }
+
+    /** Hook 4: 是否生成支援（异步） */
+    private void llmHookSummonAlly(AIPlayer ai, java.util.function.Consumer<Boolean> onResult) {
+        if (!plugin.getConfigManager().isStoryLlmSummonAlly()) {
+            onResult.accept(null);
+            return;
+        }
+        if (ai == null) {
+            onResult.accept(null);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String prompt = "你是 " + ai.getName() + "，血量低。"
+                    + "判断现在是否应该召唤支援（true=召唤，false=不召唤）。只回答 true 或 false。";
+            String reply = null;
+            try {
+                com.aip.ai.ConversationManager cm = ai.getConversationManager();
+                if (cm != null) {
+                    reply = cm.chatOnce(ai, prompt);
+                }
+            } catch (Exception ignored) {}
+            boolean shouldSummon = reply != null && reply.trim().equalsIgnoreCase("true");
+            Boolean result = shouldSummon;
+            Bukkit.getScheduler().runTask(plugin, () -> onResult.accept(result));
+        });
+    }
+
+    /** Hook 5: 下达命令内容（异步） */
+    private void llmHookDictateOrder(AIPlayer ai, int orderIndex, java.util.function.Consumer<String> onResult) {
+        if (!plugin.getConfigManager().isStoryLlmDictateOrder()) {
+            onResult.accept(null);
+            return;
+        }
+        if (ai == null) {
+            onResult.accept(null);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String prompt = "你是 " + ai.getName() + "，要向玩家下第 " + orderIndex + " 条命令。"
+                    + "生成一个具体的命令（≤30 字，如'挖 10 个钻石给我'），风格狠但合理。只输出命令内容。";
+            String reply = null;
+            try {
+                com.aip.ai.ConversationManager cm = ai.getConversationManager();
+                if (cm != null) {
+                    reply = cm.chatOnce(ai, prompt);
+                }
+            } catch (Exception ignored) {}
+            String finalReply = reply;
+            Bukkit.getScheduler().runTask(plugin, () -> onResult.accept(finalReply));
+        });
+    }
+
+    /** Hook 6: 验证玩家是否完成命令（异步） */
+    private void llmHookCheckOrder(AIPlayer ai, String orderText, String result, java.util.function.Consumer<Boolean> onResult) {
+        if (!plugin.getConfigManager().isStoryLlmCheckOrder()) {
+            onResult.accept(null);
+            return;
+        }
+        if (ai == null) {
+            onResult.accept(null);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String prompt = "你下了命令：\"" + orderText + "\"\n"
+                    + "玩家执行结果：" + result + "\n"
+                    + "判断玩家是否完成了命令（true=完成，false=未完成）。只回答 true 或 false。";
+            String reply = null;
+            try {
+                com.aip.ai.ConversationManager cm = ai.getConversationManager();
+                if (cm != null) {
+                    reply = cm.chatOnce(ai, prompt);
+                }
+            } catch (Exception ignored) {}
+            boolean completed = reply != null && reply.trim().equalsIgnoreCase("true");
+            Boolean result2 = completed;
+            Bukkit.getScheduler().runTask(plugin, () -> onResult.accept(result2));
+        });
+    }
+
+    /** Hook 7: 杀玩家前最后一句话（异步） */
+    private void llmHookKillPlayer(AIPlayer ai, java.util.function.Consumer<String> onResult) {
+        if (!plugin.getConfigManager().isStoryLlmKillPlayer()) {
+            onResult.accept(null);
+            return;
+        }
+        if (ai == null) {
+            onResult.accept(null);
+            return;
+        }
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            String prompt = "你是 " + ai.getName() + "，即将杀死玩家完成故事。"
+                    + "说最后一句话（≤30 字），风格要冷酷。";
+            String reply = null;
+            try {
+                com.aip.ai.ConversationManager cm = ai.getConversationManager();
+                if (cm != null) {
+                    reply = cm.chatOnce(ai, prompt);
+                }
+            } catch (Exception ignored) {}
+            String finalReply = reply;
+            Bukkit.getScheduler().runTask(plugin, () -> onResult.accept(finalReply));
+        });
     }
 }

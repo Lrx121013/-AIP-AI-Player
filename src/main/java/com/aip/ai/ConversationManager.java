@@ -167,31 +167,10 @@ public class ConversationManager {
         // 2. 调用 LLM（P1：流式，首 token 到达时给玩家"正在打字"提示）
         String reply;
         try {
-            // v2.2.4：流式回调中同时处理 onToken（对话内容）与 onThinkToken（思考内容）
-            reply = plugin.getLlmClient().chatStream(messages, new LLMClient.StreamCallback() {
-                @Override
-                public void onToken(String token, boolean isFirst) {
-                    if (isFirst && speaker != null) {
-                        // v2.2.4：首个对话 token，与思考内容视觉分隔（先发换行）
-                        if (plugin.getConfigManager().isReasoningEnabled()
-                                && plugin.getConfigManager().isReasoningStreamToChat()) {
-                            speaker.sendMessage("\n");
-                        }
-                    }
-                }
-
-                @Override
-                public void onThinkToken(String thinkToken, boolean isFirst) {
-                    if (speaker == null) return;
-                    ConfigManager cm = plugin.getConfigManager();
-                    if (!cm.isReasoningEnabled() || !cm.isReasoningStreamToChat()) return;
-                    if (isFirst) {
-                        // 首个思考 token：发 prefix
-                        speaker.sendMessage(cm.getReasoningPrefix() + thinkToken);
-                    } else {
-                        // 后续思考 token：发 colored token
-                        speaker.sendMessage(cm.getReasoningColor() + thinkToken);
-                    }
+            // v2.2.5：恢复 v2.2.1 极简流式回调（移除 v2.2.4 推理支持）
+            reply = plugin.getLlmClient().chatStream(messages, (token, isFirst) -> {
+                if (isFirst && speaker != null) {
+                    speaker.sendMessage("§7" + aiPlayer.getName() + " 正在打字…");
                 }
             });
         } catch (IOException e) {

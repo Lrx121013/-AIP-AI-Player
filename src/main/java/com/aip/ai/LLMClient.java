@@ -109,7 +109,6 @@ public class LLMClient {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body().byteStream()))) {
                 String line;
                 boolean firstToken = true;
-                boolean firstThink = true;
                 while ((line = reader.readLine()) != null) {
                     if (line.startsWith("data: ")) {
                         String data = line.substring(6).trim();
@@ -119,25 +118,13 @@ public class LLMClient {
                             JsonArray choices = chunk.getAsJsonArray("choices");
                             if (choices != null && !choices.isEmpty()) {
                                 JsonObject delta = choices.get(0).getAsJsonObject().getAsJsonObject("delta");
-                                if (delta != null) {
-                                    // v2.2.4：解析思考内容（推理模型）
-                                    if (config.isReasoningEnabled() && delta.has("reasoning_content")
-                                            && !delta.get("reasoning_content").isJsonNull()) {
-                                        String thinkToken = delta.get("reasoning_content").getAsString();
-                                        if (callback != null) {
-                                            callback.onThinkToken(thinkToken, firstThink);
-                                        }
-                                        firstThink = false;
+                                if (delta != null && delta.has("content") && !delta.get("content").isJsonNull()) {
+                                    String token = delta.get("content").getAsString();
+                                    full.append(token);
+                                    if (callback != null) {
+                                        callback.onToken(token, firstToken);
                                     }
-                                    // 解析对话内容
-                                    if (delta.has("content") && !delta.get("content").isJsonNull()) {
-                                        String token = delta.get("content").getAsString();
-                                        full.append(token);
-                                        if (callback != null) {
-                                            callback.onToken(token, firstToken);
-                                        }
-                                        firstToken = false;
-                                    }
+                                    firstToken = false;
                                 }
                             }
                         } catch (Exception ignored) {}
@@ -153,11 +140,7 @@ public class LLMClient {
     }
 
     /**
-     * v2.2.4：流式回调接口（区分对话内容与思考内容）
-     * <p>
-     * 推理模型流式响应中：
-     *   - {@code content} = 对话内容（最终给玩家看的话）
-     *   - {@code reasoning_content} = 思考过程（模型内部推理，可选展示）
+     * v2.2.5：流式回调接口（移除 v2.2.4 引入的 onThinkToken）
      */
     public interface StreamCallback {
         /**
@@ -166,15 +149,6 @@ public class LLMClient {
          * @param isFirst 是否为首 token
          */
         void onToken(String token, boolean isFirst);
-
-        /**
-         * 思考内容 token（仅推理模型）
-         * @param thinkToken 单个思考 token
-         * @param isFirst 是否为首个思考 token
-         */
-        default void onThinkToken(String thinkToken, boolean isFirst) {
-            // 默认实现：忽略
-        }
     }
 
     private JsonObject buildPayload(List<Map<String, String>> messages, boolean stream) {
@@ -186,14 +160,7 @@ public class LLMClient {
         payload.addProperty("presence_penalty", config.getPresencePenalty());
         payload.addProperty("max_tokens", config.getMaxTokens());
         payload.addProperty("stream", stream);
-        // v2.2.4：推理模式配置
-        //   - 启用推理模式时，不传 chat_template_kwargs（让模型自然思考）
-        //   - 关闭推理模式时，传 enable_thinking=false 禁用思考提提速
-        if (!config.isReasoningEnabled()) {
-            JsonObject chatTemplateKwargs = new JsonObject();
-            chatTemplateKwargs.addProperty("enable_thinking", false);
-            payload.add("chat_template_kwargs", chatTemplateKwargs);
-        }
+        // v2.2.5：v2.2.4 引入的 chat_template_kwargs 已被移除（用户要求删除思考支持）
         JsonArray arr = new JsonArray();
         for (Map<String, String> msg : messages) {
             JsonObject m = new JsonObject();
@@ -219,11 +186,6 @@ public class LLMClient {
             JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
             if (message == null || !message.has("content") || message.get("content").isJsonNull()) {
                 return "（AI 暂时无法回复…）";
-            }
-            // v2.2.4：如果非流式响应包含 reasoning_content，在 debug 模式下记录
-            if (message.has("reasoning_content") && !message.get("reasoning_content").isJsonNull() && config.isDebug()) {
-                Bukkit.getLogger().info("[LLM] 非流式响应包含 reasoning_content (长度="
-                        + message.get("reasoning_content").getAsString().length() + ")");
             }
             return message.get("content").getAsString();
         } catch (Exception e) {

@@ -217,14 +217,23 @@ llm:
   temperature: 0.9   # LLM 温度，0.0=完全确定 1.0=平衡 2.0=非常随机
   frequency-penalty: 0.7  # v2.2.2 复读机修复：频率/存在惩罚（-2.0~2.0），越大越抑制重复
   presence-penalty: 0.8
-  # v2.2.4：推理模型支持（如 DeepSeek-R1、agnes-2.0-flash、QwQ 等带思考的模型）
-  reasoning:
-    enabled: false           # 是否启用推理模式（true=允许模型自然思考并输出 reasoning_content；false=硬禁思考提速）
-    stream-to-chat: true     # 思考内容是否流式输出到玩家聊天框（让玩家看到 AI 在"想"）
-    prefix: '§8[思考] §7'   # 思考内容前缀（带颜色代码）
-    color: '§7'              # 思考内容每字颜色（§7=灰色）
 idle-monologue-min-seconds: 10
 idle-monologue-max-seconds: 20
 enable-threat-taunts: true
 max-allies-per-ai: 2
 ally-summon-cooldown-seconds: 60
+
+# ============================================================
+# v2.2.5 新增：故事模式 LLM hook 开关
+# 全部默认 false = 故事模式纯预设
+# 启用后，故事模式中以下场景会异步调用 LLM（默认走预设模板）
+# ============================================================
+story:
+  llm:
+    situation: false        # 局势分析（tickAwakening / tickPvpDuel）
+    taunt: false            # 嘲讽台词生成（tickAerialAssault 50% 嘲讽）
+    dialogue: false         # 玩家 @AI 时对话（注：此钩子暂未接，对话始终走 LLM）
+    summon-ally: false      # 是否生成支援（tickPvpDuel 血量低时）
+    dictate-order: false    # 下达命令内容（tickDictatorship）
+    check-order: false      # 验证玩家是否完成命令
+    kill-player: false      # 杀玩家前最后一句话
