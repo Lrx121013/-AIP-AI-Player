@@ -153,6 +153,10 @@ public class LLMClient {
         payload.addProperty("presence_penalty", config.getPresencePenalty());
         payload.addProperty("max_tokens", config.getMaxTokens());
         payload.addProperty("stream", stream);
+        // v2.2.3：禁用模型思考模式（OpenAI 兼容格式 chat_template_kwargs），提高生产速度
+        JsonObject chatTemplateKwargs = new JsonObject();
+        chatTemplateKwargs.addProperty("enable_thinking", false);
+        payload.add("chat_template_kwargs", chatTemplateKwargs);
         JsonArray arr = new JsonArray();
         for (Map<String, String> msg : messages) {
             JsonObject m = new JsonObject();
