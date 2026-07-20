@@ -148,8 +148,9 @@
 - [x] Task 21: 版本号升级与发布
   - [x] SubTask 21.1: pom.xml version 1.5.0 → 1.6.0
   - [x] SubTask 21.2: `mvn clean package -DskipTests` 编译通过（BUILD SUCCESS）
-  - [x] SubTask 21.3: git commit 已完成（commit 9365a84，25 files changed，+1531/-146）；git push 待用户配置 GitHub 认证后执行
-  - [ ] SubTask 21.4: `gh release create v1.6.0` 发布（依赖 push 完成）
+  - [x] SubTask 21.3: git commit（84014a5）+ git push origin main + git tag v1.6.0 推送成功
+  - [x] SubTask 21.4: GitHub Release v1.6.0 创建成功（https://github.com/Lrx121013/-AIP-AI-Player/releases/tag/v1.6.0）
+  - [ ] SubTask 21.5: jar asset 上传（GitHub uploads 服务持续 503，待恢复后重试或手动上传）
 
 # Task Dependencies
 

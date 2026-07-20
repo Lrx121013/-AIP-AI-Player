@@ -152,5 +152,7 @@
 - [x] MODRINTH.md 添加 v1.6.0 更新日志
 - [x] pom.xml version 改 1.6.0
 - [x] `mvn clean package -DskipTests` 编译通过（BUILD SUCCESS，target/AIPlayer-1.6.0.jar 存在）
-- [ ] git commit && git push origin main 成功（commit 9365a84 本地完成，push 待 GitHub 认证）
-- [ ] `gh release create v1.6.0` 发布成功（依赖 push）
+- [x] git commit && git push origin main 成功（commit 84014a5）
+- [x] git tag v1.6.0 推送成功
+- [x] GitHub Release v1.6.0 创建成功（https://github.com/Lrx121013/-AIP-AI-Player/releases/tag/v1.6.0）
+- [ ] jar asset 上传（GitHub uploads 服务持续 503，待恢复后重试或手动上传）
