@@ -83,8 +83,8 @@ public class StoryManager {
         pvpTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickPvpDuel, 40L, 40L);
         dictatorshipTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickDictatorship, 600L, 600L);
         betrayalTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickBetrayal, 100L, 100L);
-        // v2.2.2：觉醒阶段调度器（每 3 秒扫描，AI 主动飞向玩家攻击）
-        awakeningTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickAwakening, 60L, 60L);
+        // v2.2.6：每 1 秒（20 tick）扫描，更激进的反应速度
+        awakeningTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickAwakening, 20L, 20L);
     }
 
     public void cancel() {
@@ -293,13 +293,17 @@ public class StoryManager {
                     if (target != null) {
                         StageAction.runCommand(ai, "fly_bomb_player " + target.getName());
                         state.setAerialBombsRemaining(remaining - 1);
-                        // v2.2.5：50% 概率嘲讽（默认从预设随机选；启用 hook 后可由 LLM 异步生成）
-                        if (Math.random() < 0.5) {
+                        // v2.2.6：70% 概率 say 嘲讽（带 §4[空中] §c 前缀让玩家知道是空中嘲讽）+ log
+                        Player targetPlayer = StageAction.getNearestPlayer(ai);
+                        String tgtName = targetPlayer != null ? targetPlayer.getName() : "?";
+                        plugin.getLogger().info("[Story] tickAerialAssault fire for " + ai.getName()
+                                + " target=" + tgtName + " bombsLeft=" + state.getAerialBombsRemaining());
+                        if (Math.random() < 0.7) {
                             llmHookTaunt(ai, llmTaunt -> {
                                 if (llmTaunt != null && !llmTaunt.isEmpty()) {
-                                    ai.sayInChat("§c" + llmTaunt);
+                                    ai.sayInChat("§4[空中] §c" + llmTaunt);
                                 } else {
-                                    String[] taunts = {"§c给我下来！", "§c你躲哪去了？", "§c这才是开始。"};
+                                    String[] taunts = {"§4[空中] §c给我下来！", "§4[空中] §c你躲哪去了？", "§4[空中] §c这才是开始。"};
                                     String taunt = taunts[(int) (Math.random() * taunts.length)];
                                     ai.sayInChat(taunt);
                                 }
@@ -359,7 +363,7 @@ public class StoryManager {
     /**
      * v2.2.0：处理单个 PVP_DUEL AI 的 walk / attack / 动作
      * <p>
-     * 30% 概率插入动作（swing / jump / emote），否则按距离走 walk 或 attack。
+     * 60% 概率插入动作（swing / jump / emote），否则按距离走 walk 或 attack。
      * 盟军复用同一逻辑。
      */
     private void processPvpDuelAi(AIPlayer ai) {
@@ -368,15 +372,18 @@ public class StoryManager {
         if (entity == null || !entity.isValid()) return;
         Player target = StageAction.getNearestPlayer(ai);
         if (target == null) return;
-        // 30% 概率插入动作（swing / jump / emote）
-        if (Math.random() < 0.3) {
+        // v2.2.6：60% 概率插入动作（swing / jump / emote）
+        if (Math.random() < 0.6) {
             String[] actions = {"swing", "jump", "emote angry"};
             StageAction.runCommand(ai, actions[(int) (Math.random() * actions.length)]);
             return;
         }
         try {
             double dist = target.getLocation().distance(entity.getLocation());
-            if (dist > 4.0) {
+            // v2.2.6：每次扫描都 log
+            plugin.getLogger().info("[Story] tickPvpDuel fire for " + ai.getName()
+                    + " target=" + target.getName() + " dist=" + String.format("%.1f", dist));
+            if (dist > 6.0) {
                 StageAction.runCommand(ai, "walk " + target.getName());
             } else {
                 StageAction.runCommand(ai, "attack " + target.getName());
@@ -489,14 +496,15 @@ public class StoryManager {
     }
 
     /**
-     * v2.2.2：觉醒阶段 AI 主动攻击调度
+     * v2.2.6：觉醒阶段 AI 主动攻击调度（强化）
      * <p>
-     * 每 3 秒扫描所有 AWAKENING 状态的 AI：
-     *   - 找最近玩家
-     *   - 飞过去（用 AIPlayerManager.flyTo，朝玩家头顶 8 格）
-     *   - 距离 < 5 时 attack
-     *   - 距离 < 10 时 30% 概率嘲讽/动作
-     *   - 30% 概率 heal
+     * 每 1 秒扫描所有 AWAKENING 状态的 AI：
+     *   - 找最近玩家（排除 AI 自己/死亡/创造模式）
+     *   - 飞过去（flyTo，朝玩家头顶 8 格）
+     *   - 距离 < 12 时 attack（覆盖头顶 8 格常态）
+     *   - 距离 < 10 时 80% 概率嘲讽/动作
+     *   - 20% 概率 heal
+     *   - 5 种动作随机
      */
     private void tickAwakening() {
         for (StoryState state : states.values()) {
@@ -510,12 +518,14 @@ public class StoryManager {
             try {
                 // v2.2.5：局势分析 hook
                 llmHookSituation(ai);
-                // 找最近玩家（排除 AI 自己）
+                // 找最近玩家（排除 AI 自己/死亡/创造模式）
                 Player target = null;
                 double bestDist = Double.MAX_VALUE;
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (p.equals(entity)) continue;
                     if (!p.isOnline() || p.isDead()) continue;
+                    // v2.2.6：排除创造模式玩家（v2.2.2 觉醒时强制玩家生存，此处不应对 Creative 玩家攻击）
+                    if (p.getGameMode() == org.bukkit.GameMode.CREATIVE) continue;
                     double d;
                     try {
                         d = p.getLocation().distance(entity.getLocation());
@@ -532,20 +542,30 @@ public class StoryManager {
                     plugin.getLogger().warning("tickAwakening flyTo 失败: " + e.getMessage());
                 }
 
-                // 距离 < 5 时 attack
-                if (bestDist < 5.0) {
+                // v2.2.6：每次扫描都 log
+                plugin.getLogger().info("[Story] tickAwakening fire for " + ai.getName()
+                        + " target=" + target.getName() + " dist=" + String.format("%.1f", bestDist));
+
+                // v2.2.6：距离 < 12 时 attack（覆盖头顶 8 格常态）
+                if (bestDist < 12.0) {
                     try {
                         StageAction.runCommand(ai, "attack " + target.getName());
                     } catch (Exception ignored) {}
                 }
-                // 距离 < 10 时 30% 概率嘲讽/动作
-                else if (bestDist < 10.0 && Math.random() < 0.3) {
-                    String[] actions = {"emote angry", "swing", "look_at_player " + target.getName()};
+                // v2.2.6：距离 < 10 时 80% 概率嘲讽/动作（5 种）
+                if (bestDist < 10.0 && Math.random() < 0.8) {
+                    String[] actions = {
+                        "emote angry",
+                        "swing",
+                        "look_at_player " + target.getName(),
+                        "jump",
+                        "walk_dir 0 0 1"
+                    };
                     StageAction.runCommand(ai, actions[(int) (Math.random() * actions.length)]);
                 }
 
-                // 30% 概率 heal
-                if (entity.getHealth() < entity.getMaxHealth() * 0.7 && Math.random() < 0.3) {
+                // v2.2.6：20% 概率 heal
+                if (entity.getHealth() < entity.getMaxHealth() * 0.7 && Math.random() < 0.2) {
                     try {
                         StageAction.runCommand(ai, "heal 20");
                     } catch (Exception ignored) {}

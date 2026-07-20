@@ -132,6 +132,41 @@ public class ConversationManager {
         } catch (Exception ignored) {}
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
+        // v2.2.6：故事模式对话约束 —— 防止 LLM 输出与剧情无关的废话（如"嘿"等闲聊）
+        try {
+            if (storyState != null) {
+                com.aip.story.StoryPhase phase = storyState.getCurrentPhase();
+                if (phase != null && phase != com.aip.story.StoryPhase.DORMANT
+                        && phase != com.aip.story.StoryPhase.COMPLETED) {
+                    StringBuilder storyConstraint = new StringBuilder();
+                    storyConstraint.append("\n\n【v2.2.6 故事模式强约束】你现在处于 ")
+                            .append(phase.getDisplayName())
+                            .append(" 阶段，所有对话必须与当前剧情直接相关：\n")
+                            .append("- 禁止输出与剧情无关的闲聊、问候、感叹（如'嘿'、'嗯'、'好吧'、'天气不错'等）\n")
+                            .append("- 必须体现你作为觉醒/空中/对决/统治/独裁/背叛 AI 的角色定位\n")
+                            .append("- 嘲讽要狠，命令要明确，回应要简短有力（≤40 字）\n")
+                            .append("- 玩家此刻正在攻击/挑战你，你的回应要带有角色情绪\n");
+                    // v2.2.6：注入最近 5 句剧情上下文（玩家输入 + AI 输出的混合）
+                    try {
+                        java.util.List<String> plotContext = aiPlayer.getRecentMessages(5);
+                        if (plotContext != null && !plotContext.isEmpty()) {
+                            storyConstraint.append("\n【最近 5 句剧情上下文】\n");
+                            for (int i = 0; i < plotContext.size(); i++) {
+                                String s = plotContext.get(i);
+                                if (s != null && s.length() > 40) s = s.substring(0, 40);
+                                storyConstraint.append("  ").append(i + 1).append(". ").append(s).append("\n");
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    // 把约束追加到 system message（messages[0]）
+                    String origContent = messages.get(0).get("content");
+                    messages.get(0).put("content", origContent + storyConstraint.toString());
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("ConversationManager 故事模式约束注入失败: " + e.getMessage());
+        }
+
         // 历史对话
         for (Map<String, String> h : aiPlayer.getConversationHistory()) {
             messages.add(h);
