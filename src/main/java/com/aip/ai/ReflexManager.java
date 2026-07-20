@@ -35,6 +35,10 @@ public class ReflexManager {
     private final int minCooldownMs;
     private int nextId = 1;
     private final int checkIntervalTicks;
+    /** 反射通知 LLM 的冷却时间（毫秒），避免频繁调用 LLM */
+    private static final long NOTIFY_COOLDOWN_MS = 3000;
+    /** 上次通知 LLM 的时间戳 */
+    private long lastNotifyTime = 0;
 
     public ReflexManager(AIPlayerPlugin plugin, AIPlayer owner) {
         this.plugin = plugin;
@@ -310,9 +314,38 @@ public class ReflexManager {
             if (nearestMob != null) action = action.replace("<nearest_mob>", nearestMob);
             action = action.replace("<self>", owner.getName());
             plugin.getCommandExecutor().execute(owner, "[COMMAND:" + action + "]");
+            // 命中后异步告知 LLM（让 AI 说一句话反应，但不执行新命令）
+            notifyLLMTrigger(rule, action);
         } catch (Throwable e) {
             plugin.getLogger().warning("ReflexManager.executeAction 异常 [rule=" + rule.getId()
                     + "]: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 反射规则命中后异步告知 LLM（让 AI 说一句话反应，但不执行新命令）
+     * <p>
+     * 加 3 秒冷却避免频繁调用 LLM。
+     *
+     * @param rule          触发的规则
+     * @param actualAction  实际执行的动作字符串（已替换占位符）
+     */
+    private void notifyLLMTrigger(ReflexRule rule, String actualAction) {
+        try {
+            long now = System.currentTimeMillis();
+            if (now - lastNotifyTime < NOTIFY_COOLDOWN_MS) return;  // 冷却中，跳过
+            lastNotifyTime = now;
+
+            String triggerDesc = rule.getTriggerType().toString();
+            if (rule.getCondition() != null && !rule.getCondition().isEmpty()) {
+                triggerDesc += " " + rule.getCondition();
+            }
+            String eventDesc = "反射规则 [" + rule.getId() + "] " + triggerDesc
+                    + " 刚刚触发了，自动执行了 [COMMAND:" + actualAction + "]";
+            // 异步调 LLM 通知（ConversationManager 内部会调度异步线程）
+            new ConversationManager(plugin, owner).notifyReflexTrigger(eventDesc);
+        } catch (Throwable e) {
+            plugin.getLogger().warning("ReflexManager.notifyLLMTrigger 异常: " + e.getMessage());
         }
     }
 

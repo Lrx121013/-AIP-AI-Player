@@ -148,6 +148,61 @@ public class ConversationManager {
         }
     }
 
+    /**
+     * 反射规则命中后异步告知 LLM
+     * <p>
+     * 让 AI 知道刚才哪个反射规则触发了，可以说一句话反应（如"有人靠近了！"），
+     * 但不执行任何新命令（[COMMAND:...] 会被过滤掉，只广播文字）。
+     * <p>
+     * 异步调度，不阻塞主线程。占用 busy 标记防并发。
+     *
+     * @param eventDescription 事件描述（如"反射规则 [r1] PLAYER_NEARBY 5 刚刚触发了..."）
+     */
+    public void notifyReflexTrigger(String eventDescription) {
+        if (!plugin.getConfigManager().isConfigured()) return;
+        // 异步调度，不阻塞反射规则检查主线程
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            // 占用 busy 标记，避免与正在进行的对话冲突
+            if (!aiPlayer.getBusy().compareAndSet(false, true)) return;
+            try {
+                List<Map<String, String>> messages = new ArrayList<>();
+                // system prompt：明确告知 LLM 只需知晓，不要输出命令
+                Map<String, String> sys = new HashMap<>();
+                sys.put("role", "system");
+                sys.put("content", "你是 Minecraft 中的 AI 玩家 " + aiPlayer.getName()
+                    + "。你的某个反射规则刚刚自动触发了（反射规则是本地快速执行的，不经过你思考）。"
+                    + "现在把这个事件告知你，让你知晓。你可以自言自语一句话反应（如'有人靠近了！'、'血量告急！'），"
+                    + "符合你的个性即可。但不要输出任何 [COMMAND:...] 命令——反射规则已经自动处理了动作，你不需要再做任何事。"
+                    + "回复要简短（一两句话，不超过30字）。");
+                messages.add(sys);
+                // user message = 事件描述
+                Map<String, String> user = new HashMap<>();
+                user.put("role", "user");
+                user.put("content", eventDescription);
+                messages.add(user);
+
+                // 调用 LLM（用非流式 chat 即可，通知不需要流式）
+                String reply = plugin.getLlmClient().chat(messages);
+
+                if (reply != null && !reply.trim().isEmpty()) {
+                    // 过滤掉 [COMMAND:...] 文本（防止 LLM 误输出命令字符串污染聊天框）
+                    String text = reply.replaceAll("\\[COMMAND:[^\\]]+\\]", "").trim();
+                    if (!text.isEmpty()) {
+                        // 回到主线程广播文字（Bukkit API 必须主线程调用）
+                        final String finalText = text;
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            aiPlayer.sayInChat(finalText);
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("notifyReflexTrigger 异常: " + e.getMessage());
+            } finally {
+                aiPlayer.getBusy().set(false);
+            }
+        });
+    }
+
     private Map<String, String> makeMessage(String role, String content) {
         Map<String, String> m = new HashMap<>();
         m.put("role", role);
