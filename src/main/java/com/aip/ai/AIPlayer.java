@@ -4,8 +4,10 @@ import com.aip.AIPlayerPlugin;
 import com.aip.config.ConfigManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -366,5 +368,95 @@ public class AIPlayer {
                 }
             }
         }.runTaskTimer(plugin, 0L, 10L);
+    }
+
+    /**
+     * v2.2.0：根据当前装备自动调整实体的 GENERIC_ATTACK_DAMAGE / GENERIC_ARMOR / ARMOR_TOUGHNESS。
+     * 主手剑按 Material 查伤害表（木 4 / 石 5 / 铁 6 / 钻 7 / 下界合金 8 / 金 4），加 SHARPNESS 附魔加成（每级 +0.5×level+0.5）。
+     * 4 件护甲按 Material 查护甲值（皮 1 / 锁 2 / 铁 2 / 钻 3 / 下界合金 3 / 金 1），加 PROTECTION 附魔加成（每级 +1）。
+     * 主手空时攻击伤害重置为 1.0。
+     */
+    public void applyEquipmentAttributes() {
+        Player ent = getEntity();
+        if (ent == null || !ent.isValid()) return;
+        try {
+            // ===== 攻击伤害 =====
+            double attackDamage = 1.0;
+            ItemStack main = ent.getInventory().getItemInMainHand();
+            if (main != null && !main.getType().isAir()) {
+                Material mat = main.getType();
+                attackDamage = switch (mat) {
+                    case WOODEN_SWORD -> 4.0;
+                    case STONE_SWORD -> 5.0;
+                    case IRON_SWORD -> 6.0;
+                    case DIAMOND_SWORD -> 7.0;
+                    case NETHERITE_SWORD -> 8.0;
+                    case GOLDEN_SWORD -> 4.0;
+                    default -> 1.0;
+                };
+                // SHARPNESS 附魔加成
+                try {
+                    int sharp = main.getEnchantmentLevel(org.bukkit.enchantments.Enchantment.SHARPNESS);
+                    if (sharp > 0) attackDamage += 0.5 * sharp + 0.5;
+                } catch (Throwable ignored) {}
+            }
+            // 设置 AttackDamage
+            try {
+                org.bukkit.attribute.Attribute attr = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.attack_damage"));
+                if (attr != null) {
+                    var inst = ent.getAttribute(attr);
+                    if (inst != null) inst.setBaseValue(attackDamage);
+                }
+            } catch (Throwable ignored) {}
+
+            // ===== 护甲 =====
+            double armor = 0;
+            double toughness = 0;
+            ItemStack helmet = ent.getInventory().getHelmet();
+            ItemStack chest = ent.getInventory().getChestplate();
+            ItemStack legs = ent.getInventory().getLeggings();
+            ItemStack boots = ent.getInventory().getBoots();
+            ItemStack[] armors = {helmet, chest, legs, boots};
+            for (ItemStack armorItem : armors) {
+                if (armorItem == null || armorItem.getType().isAir()) continue;
+                Material m = armorItem.getType();
+                double a = switch (m) {
+                    case LEATHER_HELMET, LEATHER_CHESTPLATE, LEATHER_LEGGINGS, LEATHER_BOOTS,
+                         LEATHER_HORSE_ARMOR -> 1;
+                    case CHAINMAIL_HELMET, CHAINMAIL_CHESTPLATE, CHAINMAIL_LEGGINGS, CHAINMAIL_BOOTS -> 2;
+                    case IRON_HELMET, IRON_CHESTPLATE, IRON_LEGGINGS, IRON_BOOTS -> 2;
+                    case DIAMOND_HELMET, DIAMOND_CHESTPLATE, DIAMOND_LEGGINGS, DIAMOND_BOOTS -> 3;
+                    case NETHERITE_HELMET, NETHERITE_CHESTPLATE, NETHERITE_LEGGINGS, NETHERITE_BOOTS -> 3;
+                    case GOLDEN_HELMET, GOLDEN_CHESTPLATE, GOLDEN_LEGGINGS, GOLDEN_BOOTS -> 1;
+                    default -> 0;
+                };
+                armor += a;
+                // 韧性：下界合金 3.0，其它 0
+                if (m.name().contains("NETHERITE")) toughness += 3.0;
+                // PROTECTION 附魔
+                try {
+                    int prot = armorItem.getEnchantmentLevel(org.bukkit.enchantments.Enchantment.PROTECTION);
+                    if (prot > 0) armor += prot;
+                } catch (Throwable ignored) {}
+            }
+            // 设置 Armor
+            try {
+                org.bukkit.attribute.Attribute attr = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.armor"));
+                if (attr != null) {
+                    var inst = ent.getAttribute(attr);
+                    if (inst != null) inst.setBaseValue(armor);
+                }
+            } catch (Throwable ignored) {}
+            // 设置 ArmorToughness
+            try {
+                org.bukkit.attribute.Attribute attr = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.armor_toughness"));
+                if (attr != null) {
+                    var inst = ent.getAttribute(attr);
+                    if (inst != null) inst.setBaseValue(toughness);
+                }
+            } catch (Throwable ignored) {}
+        } catch (Exception e) {
+            plugin.getLogger().warning("applyEquipmentAttributes 失败: " + e.getMessage());
+        }
     }
 }

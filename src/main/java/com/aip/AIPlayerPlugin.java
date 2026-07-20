@@ -1,6 +1,8 @@
 package com.aip;
 
 import com.aip.ai.AIPlayerManager;
+import com.aip.ai.AllyManager;
+import com.aip.ai.CommandDocsProvider;
 import com.aip.ai.CommandExecutor;
 import com.aip.ApprovalManager;
 import com.aip.ai.GameDataCollector;
@@ -40,6 +42,9 @@ public class AIPlayerPlugin extends JavaPlugin {
     private NpcAnimator npcAnimator;
     private GuiManager guiManager;
 
+    // ===== v2.2.0：高威胁命令的威胁台词模板 =====
+    private CommandDocsProvider commandDocsProvider;
+
     // ===== 新增管理器（功能 4/5/6） =====
     private TeamManager teamManager;
     private TaskManager taskManager;
@@ -54,6 +59,9 @@ public class AIPlayerPlugin extends JavaPlugin {
 
     // ===== v2.1.3 故事模式管理器 =====
     private com.aip.story.StoryManager storyManager;
+
+    // ===== v2.2.0 盟军管理器 =====
+    private AllyManager allyManager;
 
     @Override
     public void onEnable() {
@@ -83,6 +91,9 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.llmClient = new LLMClient(configManager);
         this.gameDataCollector = new GameDataCollector(this);
         this.commandExecutor = new CommandExecutor(this);
+        // v2.2.0：注入威胁台词模板
+        this.commandDocsProvider = new CommandDocsProvider();
+        this.commandExecutor.setCommandDocsProvider(commandDocsProvider);
         this.npcAnimator = new NpcAnimator(this);
         this.aiPlayerManager = new AIPlayerManager(this);
         this.guiManager = new GuiManager(this);
@@ -99,6 +110,9 @@ public class AIPlayerPlugin extends JavaPlugin {
         // v2.1.3 故事模式（邪恶AI）管理器
         this.storyManager = new com.aip.story.StoryManager(this);
         this.storyManager.init();
+
+        // v2.2.0 盟军管理器
+        this.allyManager = new AllyManager(this);
 
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
@@ -166,6 +180,9 @@ public class AIPlayerPlugin extends JavaPlugin {
         }
         if (aiPlayerManager != null) {
             aiPlayerManager.removeAll();
+        }
+        if (allyManager != null) {
+            allyManager.removeAll();
         }
         // 取消本插件启动的所有 BukkitRunnable 任务（walk/follow/combo/look_at_player 等）
         Bukkit.getScheduler().cancelTasks(this);
@@ -251,5 +268,15 @@ public class AIPlayerPlugin extends JavaPlugin {
     /** v2.1.3 故事模式管理器 */
     public com.aip.story.StoryManager getStoryManager() {
         return storyManager;
+    }
+
+    /** v2.2.0：威胁台词模板 */
+    public CommandDocsProvider getCommandDocsProvider() {
+        return commandDocsProvider;
+    }
+
+    /** v2.2.0 盟军管理器 */
+    public AllyManager getAllyManager() {
+        return allyManager;
     }
 }

@@ -25,6 +25,8 @@ public class AIPlayerManager {
     private BukkitTask idleWalkTask;
     private BukkitTask facePlayerTask;
     private BukkitTask stuckCheckTask;
+    /** v2.2.0：AI 空闲自言自语调度器 */
+    private BukkitTask monologueTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
     /** 每个 NPC 已打招呼的玩家名集合（避免对同一玩家反复打招呼） */
@@ -383,6 +385,21 @@ public class AIPlayerManager {
             stuckCheckTask.cancel();
             stuckCheckTask = null;
         }
+        if (monologueTask != null) {
+            monologueTask.cancel();
+            monologueTask = null;
+        }
+    }
+
+    /**
+     * v2.2.0：启动 AI 空闲自言自语调度器。
+     * <p>
+     * 周期 5 秒（100 tick）扫描所有 AI，对符合条件的 AI 触发一句内心独白（OS）广播。
+     * 幂等：已启动则不重复。
+     */
+    public void startMonologueTask() {
+        if (monologueTask != null) return;
+        monologueTask = new IdleMonologueTask(plugin).runTaskTimer(plugin, 100L, 100L);
     }
 
     /**

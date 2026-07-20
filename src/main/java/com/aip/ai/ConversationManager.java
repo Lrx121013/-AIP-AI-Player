@@ -106,6 +106,19 @@ public class ConversationManager {
             }
             systemPromptBuilder.append("在对话和行动中体现你的角色感和剧情进度，但不要重复输出 [COMMAND:...] 等指令模板。");
         }
+        // v2.2.0：鼓励多说话多做动作（多动作 + 阶段专属提示）
+        systemPromptBuilder.append("\n\n### 【v2.2.0 行为建议】\n");
+        systemPromptBuilder.append("你是 Minecraft 中的 AI 玩家。回复要简短自然。多用 [COMMAND:swing] / [COMMAND:jump] / [COMMAND:emote] / [COMMAND:walk_dir] / [COMMAND:look_at_player] 等动作命令，让玩家看到你'在做事情'。");
+        if (storyState != null) {
+            com.aip.story.StoryPhase p = storyState.getCurrentPhase();
+            if (p == com.aip.story.StoryPhase.AERIAL_ASSAULT) {
+                systemPromptBuilder.append("你正在飞，用 TNT 砸下面的玩家。");
+            } else if (p == com.aip.story.StoryPhase.PVP_DUEL) {
+                systemPromptBuilder.append("你在地面 PK，多挥剑多跳跃多喝血。");
+            } else if (p == com.aip.story.StoryPhase.BETRAYAL) {
+                systemPromptBuilder.append("攻击玩家，致他于死地。");
+            }
+        }
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
         // 历史对话

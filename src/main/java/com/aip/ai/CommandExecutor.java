@@ -39,10 +39,17 @@ public class CommandExecutor {
     private final AIPlayerPlugin plugin;
     /** P1：命令文档缓存（构造时一次性生成，避免每次对话都反射扫描） */
     private final String cachedDocs;
+    /** v2.2.0：高威胁命令的威胁台词模板（由 AIPlayerPlugin 在 onEnable 注入） */
+    private CommandDocsProvider commandDocsProvider;
 
     public CommandExecutor(AIPlayerPlugin plugin) {
         this.plugin = plugin;
         this.cachedDocs = getCommandDocs();
+    }
+
+    /** v2.2.0：注入威胁台词模板 */
+    public void setCommandDocsProvider(CommandDocsProvider p) {
+        this.commandDocsProvider = p;
     }
 
     /** P1：获取缓存的命令文档 */
@@ -152,6 +159,46 @@ public class CommandExecutor {
      * 抛出的异常返回 (cmd, false, e.getMessage())。
      */
     private ExecutionResult dispatchCommand(AIPlayer aiPlayer, String fullCommand) {
+        String[] parts = fullCommand.split("\\s+");
+        if (parts.length == 0) {
+            return new ExecutionResult("", false, "空命令");
+        }
+        String cmd = parts[0].toLowerCase();
+
+        Player entity = aiPlayer.getEntity();
+        if (entity == null || !entity.isValid()) {
+            plugin.getLogger().warning("AI 实体不存在: " + aiPlayer.getName());
+            return new ExecutionResult(cmd, false, "AI 实体不存在");
+        }
+
+        // v2.2.0：高威胁命令前先 sayInChat 威胁台词 + 延迟 10 tick 执行
+        if (commandDocsProvider != null
+                && commandDocsProvider.isThreatCommand(cmd)) {
+            String taunt = commandDocsProvider.pickRandom(cmd);
+            if (taunt != null) {
+                aiPlayer.sayInChat(taunt);
+                // 10 tick 后再执行（用单独方法包一层）
+                final String finalCmd = fullCommand;
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    try {
+                        dispatchCommandInternal(aiPlayer, finalCmd);
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("延迟命令执行失败 [" + finalCmd + "]: " + e.getMessage());
+                    }
+                }, 10L);
+                return new ExecutionResult(cmd, true, "威胁台词已注入");
+            }
+        }
+
+        return dispatchCommandInternal(aiPlayer, fullCommand);
+    }
+
+    /**
+     * 实际执行命令的内部方法（可被 {@link #dispatchCommand} 同步调用，或由延迟任务异步调用）。
+     * <p>
+     * v2.2.0：把原 dispatchCommand 主体抽到这里，让高威胁命令能在 sayInChat(taunt) 之后 10 tick 再走这里。
+     */
+    private ExecutionResult dispatchCommandInternal(AIPlayer aiPlayer, String fullCommand) {
         String[] parts = fullCommand.split("\\s+");
         if (parts.length == 0) {
             return new ExecutionResult("", false, "空命令");
@@ -278,6 +325,8 @@ public class CommandExecutor {
                 case "equip_netherite_set" -> handleEquipNetheriteSet(entity);
                 case "give_rulebook" -> handleGiveRulebook(entity, args);
                 case "dictate_order" -> handleDictateOrder(entity, args);
+                // v2.2.0：盟军召唤（LLM 可调用）
+                case "summon_ally" -> handleSummonAlly(aiPlayer, args);
                 default -> {
                     plugin.getLogger().warning("未知 AI 命令: " + cmd);
                     return new ExecutionResult(cmd, false, "未知命令");
@@ -311,6 +360,22 @@ public class CommandExecutor {
         } catch (Throwable ignored) {
         }
         return 20.0;
+    }
+
+    /**
+     * v2.2.0：读取实体的真实攻击伤害（Attribute GENERIC_ATTACK_DAMAGE）。
+     * AI 装备剑 / 附魔后，{@code getAttackDamage()} 不再是 5.0 而是 8.0（NETHERITE_SWORD）。
+     * 失败时回退到 config 默认值。
+     */
+    private double getRealAttackDamage(Player entity) {
+        try {
+            org.bukkit.attribute.Attribute attr = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.attack_damage"));
+            if (attr != null) {
+                var inst = entity.getAttribute(attr);
+                if (inst != null) return inst.getValue();
+            }
+        } catch (Throwable ignored) {}
+        return plugin.getConfigManager().getAttackDamage();
     }
 
     /**
@@ -852,7 +917,7 @@ public class CommandExecutor {
             }
         }
 
-        double damage = plugin.getConfigManager().getAttackDamage();
+        double damage = getRealAttackDamage(entity);
         target.damage(damage, entity);
 
         // 埋点：每次攻击都计为击杀（功能 1，简化口径）
@@ -1219,7 +1284,7 @@ public class CommandExecutor {
         Player target = Bukkit.getPlayerExact(args[0]);
         if (target == null || target.equals(entity)) return;
         int times = args.length >= 2 ? Math.min(10, safeParse(args[1], 3)) : 3;
-        double damage = plugin.getConfigManager().getAttackDamage();
+        double damage = getRealAttackDamage(entity);
         new BukkitRunnable() {
             int count = 0;
             @Override
@@ -1561,8 +1626,8 @@ public class CommandExecutor {
         entity.sendMessage("§a已将 §e" + playerName + " §a强制设为生存模式");
     }
 
-    /** tnt_strike_burst <玩家名> —— 在玩家头顶 8 格生成 TNT（让 Minecraft 物理自然下落） */
-    @AICommand(name = "tnt_strike_burst", desc = "在玩家头顶生成 TNT 自然下落", args = "玩家名", op = true, category = "故事")
+    /** tnt_strike_burst <玩家名> —— 朝玩家投掷引燃 TNT 实体（v2.2.0 真实物理） */
+    @AICommand(name = "tnt_strike_burst", desc = "朝玩家投掷引燃 TNT 实体", args = "玩家名", op = true, category = "故事")
     private void handleTntStrikeBurst(Player entity, String[] args) {
         if (args.length < 1) {
             throw new RuntimeException("用法：tnt_strike_burst <玩家名>");
@@ -1571,27 +1636,17 @@ public class CommandExecutor {
         if (target == null || !target.isOnline()) {
             throw new RuntimeException("玩家不在线：" + args[0]);
         }
-        Location tloc = target.getLocation();
-        World world = target.getWorld();
-        // 在玩家头顶 8 格生成 TNT
-        Block tnt = world.getBlockAt(tloc.getBlockX(), tloc.getBlockY() + 8, tloc.getBlockZ());
-        tnt.setType(Material.TNT);
-        // 10 tick 后点燃
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            try {
-                org.bukkit.block.Block t = world.getBlockAt(tloc.getBlockX(), tloc.getBlockY() + 8, tloc.getBlockZ());
-                if (t.getType() == Material.TNT) {
-                    t.setType(Material.AIR);
-                    world.spawnEntity(new Location(world,
-                            tloc.getBlockX() + 0.5, tloc.getBlockY() + 8, tloc.getBlockZ() + 0.5),
-                            org.bukkit.entity.EntityType.TNT);
-                }
-            } catch (Exception ignored) {}
-        }, 10L);
+        // v2.2.0：改为真实引燃 TNT 实体（不再 setBlock）
+        org.bukkit.entity.TNTPrimed tnt = entity.getWorld().spawn(
+                entity.getLocation().add(0, 1, 0), org.bukkit.entity.TNTPrimed.class);
+        tnt.setFuseTicks(40);
+        org.bukkit.util.Vector dir = target.getLocation().add(0, 1, 0).toVector()
+                .subtract(tnt.getLocation().toVector()).normalize().multiply(1.5);
+        tnt.setVelocity(dir);
     }
 
-    /** fly_bomb_player <玩家名> —— 创造模式下朝玩家位置发射 TNT（带初速度 1.5），并保持飞行高度 */
-    @AICommand(name = "fly_bomb_player", desc = "朝玩家发射 TNT 飞行轰炸", args = "玩家名", op = true, category = "故事")
+    /** fly_bomb_player <玩家名> —— 抬到玩家头顶 + 朝玩家投掷引燃 TNT（v2.2.0 真实物理） */
+    @AICommand(name = "fly_bomb_player", desc = "飞至玩家头顶投掷引燃 TNT 实体", args = "玩家名", op = true, category = "故事")
     private void handleFlyBombPlayer(Player entity, String[] args) {
         if (args.length < 1) {
             throw new RuntimeException("用法：fly_bomb_player <玩家名>");
@@ -1600,20 +1655,43 @@ public class CommandExecutor {
         if (target == null || !target.isOnline()) {
             throw new RuntimeException("玩家不在线：" + args[0]);
         }
-        // 先把自己抬到玩家头顶 8 格以上（飞行模式）
+        // 抬到玩家头顶 10 格（保持飞行）
         Location targetLoc = target.getLocation();
         Location myLoc = entity.getLocation();
         if (myLoc.getY() < targetLoc.getY() + 8) {
             entity.teleport(new Location(myLoc.getWorld(), myLoc.getX(), targetLoc.getY() + 10, myLoc.getZ()));
         }
-        // 生成 TNT 实体，方向指向玩家
+        // v2.2.0：用真实引燃 TNT
         org.bukkit.entity.TNTPrimed tnt = entity.getWorld().spawn(
                 entity.getLocation().add(0, 1, 0), org.bukkit.entity.TNTPrimed.class);
-        // 设定初速度指向玩家
-        Vector direction = targetLoc.toVector().subtract(tnt.getLocation().toVector()).normalize().multiply(1.5);
+        tnt.setFuseTicks(80);  // 飞行时 TNT 飞得远，4 秒引爆
+        org.bukkit.util.Vector dir = target.getLocation().add(0, 1, 0).toVector()
+                .subtract(tnt.getLocation().toVector()).normalize().multiply(1.0);
+        tnt.setVelocity(dir);
+    }
+
+    /** throw_tnt [power] —— 朝最近玩家投掷引燃 TNT 实体（v2.2.0 真实物理） */
+    @AICommand(name = "throw_tnt", desc = "朝玩家投掷引燃 TNT", args = "[power]", category = "故事")
+    private void handleThrowTnt(Player entity, String[] args) {
+        double power = args.length >= 1 ? safeParseDouble(args[0], 1.5) : 1.5;
+        if (power < 0.5) power = 0.5;
+        if (power > 3.0) power = 3.0;
+        // 找最近玩家
+        org.bukkit.entity.Player target = null;
+        double bestDist = Double.MAX_VALUE;
+        for (org.bukkit.entity.Player p : entity.getWorld().getPlayers()) {
+            if (p.equals(entity) || !p.isOnline()) continue;
+            double d = p.getLocation().distanceSquared(entity.getLocation());
+            if (d < bestDist) { bestDist = d; target = p; }
+        }
+        if (target == null) throw new RuntimeException("附近没有玩家");
+        // 生成 TNT 实体
+        org.bukkit.entity.TNTPrimed tnt = entity.getWorld().spawn(entity.getLocation().add(0, 1, 0), org.bukkit.entity.TNTPrimed.class);
+        tnt.setFuseTicks(40);  // 2 秒后爆
+        // 方向朝玩家
+        org.bukkit.util.Vector direction = target.getLocation().add(0, 1, 0).toVector()
+                .subtract(tnt.getLocation().toVector()).normalize().multiply(power);
         tnt.setVelocity(direction);
-        // 40 tick 后引爆
-        tnt.setFuseTicks(40);
     }
 
     /** equip_netherite_set —— 一次性装备全套顶级下界合金 + 盾牌 */
@@ -1632,6 +1710,38 @@ public class CommandExecutor {
         // 关闭无敌（确保 PVP 阶段能被打）
         entity.setInvulnerable(false);
         entity.sendMessage("§a已装备顶级下界合金套 + 盾牌");
+
+        // v2.2.0：装备下界合金后调 applyEquipmentAttributes + 强化属性
+        try {
+            com.aip.ai.AIPlayer aiPlayer = plugin.getAiPlayerManager().getByEntity(entity.getUniqueId());
+            if (aiPlayer != null) {
+                aiPlayer.applyEquipmentAttributes();
+            }
+        } catch (Exception ignored) {}
+
+        // v2.2.0：额外强化属性（maxHealth / speed / knockbackResistance）
+        try {
+            org.bukkit.attribute.Attribute maxHp = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.max_health"));
+            if (maxHp != null) {
+                var inst = entity.getAttribute(maxHp);
+                if (inst != null) inst.setBaseValue(40.0);
+            }
+            entity.setHealth(40.0);
+        } catch (Throwable ignored) {}
+        try {
+            org.bukkit.attribute.Attribute speed = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.movement_speed"));
+            if (speed != null) {
+                var inst = entity.getAttribute(speed);
+                if (inst != null) inst.setBaseValue(0.13);
+            }
+        } catch (Throwable ignored) {}
+        try {
+            org.bukkit.attribute.Attribute kb = org.bukkit.Registry.ATTRIBUTE.get(org.bukkit.NamespacedKey.minecraft("generic.knockback_resistance"));
+            if (kb != null) {
+                var inst = entity.getAttribute(kb);
+                if (inst != null) inst.setBaseValue(0.4);
+            }
+        } catch (Throwable ignored) {}
     }
 
     /** give_rulebook <玩家名> —— 创建一个 written_book "AI 制度之书" 放入玩家物品栏 */
@@ -1680,6 +1790,37 @@ public class CommandExecutor {
         if (target != null && target.isOnline()) {
             target.sendMessage("§4§l[AI 命令] §c你必须 §f" + order + "§c，否则会有惩罚！");
         }
+    }
+
+    /** summon_ally [数量] —— 召唤盟军协助（仅 PVP_DUEL / BETRAYAL 阶段） */
+    @AICommand(name = "summon_ally", desc = "召唤盟军 AIP 协助战斗", args = "[数量]", category = "故事")
+    private void handleSummonAlly(AIPlayer aiPlayer, String[] args) {
+        if (plugin.getAllyManager() == null) {
+            throw new RuntimeException("盟军管理器未初始化");
+        }
+        if (args.length < 1) {
+            // 默认 1
+            if (!plugin.getAllyManager().canSummon(aiPlayer)) {
+                throw new RuntimeException("召唤冷却中或盟军已达上限");
+            }
+            AIPlayer ally = plugin.getAllyManager().summon(aiPlayer);
+            if (ally == null) throw new RuntimeException("召唤失败");
+            aiPlayer.sayInChat("§c来吧，帮我！");
+            return;
+        }
+        int count = Math.min(2, safeParse(args[0], 1));
+        int summoned = 0;
+        for (int i = 0; i < count; i++) {
+            if (!plugin.getAllyManager().canSummon(aiPlayer)) break;
+            AIPlayer ally = plugin.getAllyManager().summon(aiPlayer);
+            if (ally == null) break;
+            summoned++;
+        }
+        if (summoned == 0) {
+            throw new RuntimeException("召唤失败：冷却中或盟军已达上限");
+        }
+        aiPlayer.sayInChat("§c来吧，帮我！");
+        aiPlayer.setLastQueryResult("成功召唤 " + summoned + " 个盟军");
     }
 
     private double safeParseDouble(String s, double def) {

@@ -128,6 +128,17 @@ public class StoryManager {
                     String killerName = killer != null ? killer.getName() : "未知";
                     StageAction.broadcast("§c§l[剧情] §4" + ai.getName() + " §c被 " + killerName + " 击杀了 " + kills + " 次后……觉醒了！");
                     StageAction.say(ai, "我受够了！我要开始反击！");
+                    // v2.2.0：觉醒瞬间立即切创造 + 飞行 + 强制玩家生存（不等到 AERIAL_ASSAULT）
+                    try {
+                        if (killer != null && killer.isOnline()) {
+                            StageAction.runCommand(ai, "force_survival_player " + killer.getName());
+                        }
+                        StageAction.runCommand(ai, "gamemode creative");
+                        StageAction.runCommand(ai, "fly on");
+                        StageAction.say(ai, "现在，让我来控制战场！");
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("觉醒切模式失败: " + e.getMessage());
+                    }
                     // 立即攻击 killer
                     if (killer != null && killer.isOnline()) {
                         StageAction.runCommand(ai, "attack " + killer.getName());
@@ -248,6 +259,12 @@ public class StoryManager {
                     if (target != null) {
                         StageAction.runCommand(ai, "fly_bomb_player " + target.getName());
                         state.setAerialBombsRemaining(remaining - 1);
+                        // v2.2.0：50% 概率 say 嘲讽（sayInChat 内部有 30 秒去重）
+                        if (Math.random() < 0.5) {
+                            String[] taunts = {"§c给我下来！", "§c你躲哪去了？", "§c这才是开始。"};
+                            String taunt = taunts[(int) (Math.random() * taunts.length)];
+                            ai.sayInChat(taunt);
+                        }
                     }
                 }
             }
@@ -275,18 +292,46 @@ public class StoryManager {
                 }
             }
 
-            // 找最近玩家 walk 或 attack
-            Player target = StageAction.getNearestPlayer(ai);
-            if (target == null) continue;
+            // 主 AIP 走 walk / attack / 动作
+            processPvpDuelAi(ai);
+
+            // 盟军也参与攻击
             try {
-                double dist = target.getLocation().distance(entity.getLocation());
-                if (dist > 4.0) {
-                    StageAction.runCommand(ai, "walk " + target.getName());
-                } else {
-                    StageAction.runCommand(ai, "attack " + target.getName());
+                if (plugin.getAllyManager() != null) {
+                    for (AIPlayer ally : plugin.getAllyManager().getAllies(ai)) {
+                        processPvpDuelAi(ally);
+                    }
                 }
             } catch (Exception ignored) {}
         }
+    }
+
+    /**
+     * v2.2.0：处理单个 PVP_DUEL AI 的 walk / attack / 动作
+     * <p>
+     * 30% 概率插入动作（swing / jump / emote），否则按距离走 walk 或 attack。
+     * 盟军复用同一逻辑。
+     */
+    private void processPvpDuelAi(AIPlayer ai) {
+        if (ai == null) return;
+        Player entity = ai.getEntity();
+        if (entity == null || !entity.isValid()) return;
+        Player target = StageAction.getNearestPlayer(ai);
+        if (target == null) return;
+        // 30% 概率插入动作（swing / jump / emote）
+        if (Math.random() < 0.3) {
+            String[] actions = {"swing", "jump", "emote angry"};
+            StageAction.runCommand(ai, actions[(int) (Math.random() * actions.length)]);
+            return;
+        }
+        try {
+            double dist = target.getLocation().distance(entity.getLocation());
+            if (dist > 4.0) {
+                StageAction.runCommand(ai, "walk " + target.getName());
+            } else {
+                StageAction.runCommand(ai, "attack " + target.getName());
+            }
+        } catch (Exception ignored) {}
     }
 
     /**

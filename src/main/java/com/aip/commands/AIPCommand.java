@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -112,6 +113,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             case "reflex" -> handleReflex(sender, args);
             // 主线任务查看
             case "quest" -> handleQuest(sender, args);
+            // v2.2.0：盟军管理
+            case "ally" -> handleAlly(sender, args);
             default -> sendHelp(sender);
         }
         return true;
@@ -1263,6 +1266,46 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                 + "§r，进度 §d" + curProgress + "/" + targetProgress + "§r，§a进行中§r）");
     }
 
+    // ===== v2.2.0：盟军管理（/aip ally list|remove <name>）=====
+    private void handleAlly(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("aip.admin")) {
+            sender.sendMessage("§c你没有权限执行此操作。");
+            return;
+        }
+        if (args.length < 1) {
+            sender.sendMessage("§c用法：/aip ally list|remove <name>");
+            return;
+        }
+        String sub = args[0].toLowerCase();
+        if ("list".equals(sub)) {
+            Map<UUID, List<UUID>> mappings = plugin.getAllyManager().getAllMappings();
+            if (mappings.isEmpty()) {
+                sender.sendMessage("§7当前没有任何盟军");
+                return;
+            }
+            for (Map.Entry<UUID, List<UUID>> e : mappings.entrySet()) {
+                AIPlayer main = plugin.getAiPlayerManager().getByEntity(e.getKey());
+                String mainName = main != null ? main.getName() : e.getKey().toString();
+                sender.sendMessage("§e主 AIP " + mainName + " 拥有 " + e.getValue().size() + " 个盟军");
+            }
+            return;
+        }
+        if ("remove".equals(sub)) {
+            if (args.length < 2) {
+                sender.sendMessage("§c用法：/aip ally remove <name>");
+                return;
+            }
+            boolean ok = plugin.getAllyManager().remove(args[1]);
+            if (!ok) {
+                sender.sendMessage("§c盟军不存在: " + args[1]);
+                return;
+            }
+            sender.sendMessage("§a已移除盟军 " + args[1]);
+            return;
+        }
+        sender.sendMessage("§c未知子命令: " + sub + "（仅支持 list / remove <name>）");
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 0) return java.util.Collections.emptyList();
@@ -1281,7 +1324,7 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin",
                     "history", "personality", "team", "task", "relation", "revive",
                     "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory",
-                    "approve", "reject", "reflex", "quest", "story");
+                    "approve", "reject", "reflex", "quest", "story", "ally");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")
@@ -1310,6 +1353,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             } else if (sub.equals("story")) {
                 // v2.1.3: /aip story show/skip
                 result = Arrays.asList("show", "skip");
+            } else if (sub.equals("ally")) {
+                // v2.2.0: /aip ally list/remove
+                result = Arrays.asList("list", "remove");
             }
         } else if (args.length == 3) {
             String sub = args[0].toLowerCase();

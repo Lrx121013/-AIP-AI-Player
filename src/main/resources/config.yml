@@ -208,3 +208,14 @@ system-prompt: |
 # 调试
 # ============================================================
 debug: false
+
+# ============================================================
+# v2.2.0 新增：故事模式战斗增强
+# ============================================================
+llm:
+  temperature: 0.9   # LLM 温度，0.0=完全确定 1.0=平衡 2.0=非常随机
+idle-monologue-min-seconds: 10
+idle-monologue-max-seconds: 20
+enable-threat-taunts: true
+max-allies-per-ai: 2
+ally-summon-cooldown-seconds: 60

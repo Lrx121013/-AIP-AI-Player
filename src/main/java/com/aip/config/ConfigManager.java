@@ -30,6 +30,14 @@ public class ConfigManager {
     private int scanRadius;
     private int entityScanRadius;
 
+    // v2.2.0：故事模式战斗增强
+    private double temperature;
+    private int idleMonologueMinSeconds;
+    private int idleMonologueMaxSeconds;
+    private boolean enableThreatTaunts;
+    private int maxAlliesPerAi;
+    private long allySummonCooldownSeconds;
+
     private String systemPromptTemplate;
     private boolean debug;
 
@@ -64,6 +72,14 @@ public class ConfigManager {
 
         this.systemPromptTemplate = cfg.getString("system-prompt", "");
         this.debug = cfg.getBoolean("debug", false);
+
+        // v2.2.0 故事模式战斗增强
+        this.temperature = cfg.getDouble("llm.temperature", 0.9);
+        this.idleMonologueMinSeconds = cfg.getInt("idle-monologue-min-seconds", 10);
+        this.idleMonologueMaxSeconds = cfg.getInt("idle-monologue-max-seconds", 20);
+        this.enableThreatTaunts = cfg.getBoolean("enable-threat-taunts", true);
+        this.maxAlliesPerAi = cfg.getInt("max-allies-per-ai", 2);
+        this.allySummonCooldownSeconds = cfg.getLong("ally-summon-cooldown-seconds", 60L);
     }
 
     /**
@@ -179,7 +195,22 @@ public class ConfigManager {
     }
 
     public double getTemperature() {
-        return plugin.getConfig().getDouble("provider.temperature", 0.7);
+        return temperature;
+    }
+
+    /** 自言自语最小间隔（秒） */
+    public int getIdleMonologueMinSeconds() {
+        return idleMonologueMinSeconds;
+    }
+
+    /** 自言自语最大间隔（秒） */
+    public int getIdleMonologueMaxSeconds() {
+        return idleMonologueMaxSeconds;
+    }
+
+    /** 是否启用威胁嘲讽 */
+    public boolean isEnableThreatTaunts() {
+        return enableThreatTaunts;
     }
 
     /** 是否启用主线任务系统，实时读取配置 */
@@ -252,5 +283,17 @@ public class ConfigManager {
     /** 空中轰炸间隔（毫秒），默认 4000（4 秒） */
     public long getAerialTickMs() {
         return plugin.getConfig().getLong("ai.story-mode.aerial-tick-ms", 4000L);
+    }
+
+    // ===== v2.2.0 盟军配置 =====
+
+    /** 每个主 AIP 最多召唤几个盟军，默认 2 */
+    public int getMaxAlliesPerAi() {
+        return maxAlliesPerAi;
+    }
+
+    /** 盟军召唤节流（秒），默认 60 */
+    public long getAllySummonCooldownSeconds() {
+        return allySummonCooldownSeconds;
     }
 }
