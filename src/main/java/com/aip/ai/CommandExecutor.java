@@ -172,7 +172,8 @@ public class CommandExecutor {
         }
 
         // v2.2.0：高威胁命令前先 sayInChat 威胁台词 + 延迟 10 tick 执行
-        if (commandDocsProvider != null
+        if (plugin.getConfigManager().isEnableThreatTaunts()
+                && commandDocsProvider != null
                 && commandDocsProvider.isThreatCommand(cmd)) {
             String taunt = commandDocsProvider.pickRandom(cmd);
             if (taunt != null) {

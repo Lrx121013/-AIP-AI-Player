@@ -57,7 +57,8 @@ ai:
   autonomous: true
 
   # 自动活动间隔（秒）
-  autonomous-interval: 8
+  # v2.2.0：默认从 8s 提到 25s，让 LLM 决策更频繁（之前偏长）
+  autonomous-interval: 25
 
   # 空闲漫游间隔（秒）：每隔该时间随机走一次，不调 LLM
   idle-walk-interval: 10

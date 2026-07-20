@@ -114,6 +114,11 @@ public class AIPlayerPlugin extends JavaPlugin {
         // v2.2.0 盟军管理器
         this.allyManager = new AllyManager(this);
 
+        // v2.2.0 启动自言自语调度器（每 10-20 秒每 AIP 一次 OS）
+        if (aiPlayerManager != null) {
+            aiPlayerManager.startMonologueTask();
+        }
+
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
         if (getCommand("aip") != null) {
