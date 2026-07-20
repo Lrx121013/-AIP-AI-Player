@@ -32,6 +32,8 @@ public class ConfigManager {
 
     // v2.2.0：故事模式战斗增强
     private double temperature;
+    // v2.2.1：复读机修复——频率/存在惩罚
+    private double frequencyPenalty;
     private int idleMonologueMinSeconds;
     private int idleMonologueMaxSeconds;
     private boolean enableThreatTaunts;
@@ -75,6 +77,8 @@ public class ConfigManager {
 
         // v2.2.0 故事模式战斗增强
         this.temperature = cfg.getDouble("llm.temperature", 0.9);
+        // v2.2.1 复读机修复
+        this.frequencyPenalty = cfg.getDouble("llm.frequency-penalty", 0.5);
         this.idleMonologueMinSeconds = cfg.getInt("idle-monologue-min-seconds", 10);
         this.idleMonologueMaxSeconds = cfg.getInt("idle-monologue-max-seconds", 20);
         this.enableThreatTaunts = cfg.getBoolean("enable-threat-taunts", true);
@@ -196,6 +200,11 @@ public class ConfigManager {
 
     public double getTemperature() {
         return temperature;
+    }
+
+    /** v2.2.1：LLM 频率/存在惩罚（-2.0~2.0），抑制复读。默认 0.5 */
+    public double getFrequencyPenalty() {
+        return frequencyPenalty;
     }
 
     /** 自言自语最小间隔（秒） */

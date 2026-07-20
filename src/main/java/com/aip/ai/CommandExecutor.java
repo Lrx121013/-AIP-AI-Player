@@ -788,32 +788,12 @@ public class CommandExecutor {
         // 埋点：统计行走距离（功能 1）
         aiPlayer.getStats().addWalk(totalDist);
 
-        // 优先使用后端寻路（Citizens 的 A* 寻路会绕过障碍）
         double speed = plugin.getConfigManager().getMoveSpeed();
-        boolean navigated = NpcHelper.navigateTo(entity, target, speed);
+        // v2.2.1：导航改走 AIPlayerManager 包装方法（带连续失败 5 秒静默）
+        boolean navigated = plugin.getAiPlayerManager().navigateTo(aiPlayer, target);
         if (navigated) return;
-        plugin.getLogger().warning("Citizens navigateTo 失败，回退到 teleport 模拟行走: " + aiPlayer.getName() + " -> " + target);
-
-        // 回退方案：分帧 teleport 模拟"行走"（NMS 后端）
-        if (totalDist < 0.5) return;
-        int steps = Math.max(1, (int) Math.min(60, Math.ceil(totalDist / speed)));
-        Vector step = target.toVector().subtract(start.toVector()).multiply(1.0 / steps);
-
-        new org.bukkit.scheduler.BukkitRunnable() {
-            int i = 0;
-            @Override
-            public void run() {
-                if (i >= steps || !entity.isValid()) {
-                    cancel();
-                    return;
-                }
-                Location next = entity.getLocation().add(step);
-                // 保留地面高度（避免穿墙下降）
-                next.setY(entity.getLocation().getY());
-                entity.teleport(next);
-                i++;
-            }
-        }.runTaskTimer(plugin, 0L, 5L);
+        // Citizens 寻路失败或处于静默期：调用 AIPlayerManager 的 1.5 秒冷却 fallback
+        plugin.getAiPlayerManager().tryFallbackTeleport(aiPlayer, target, totalDist, speed);
     }
 
     @AICommand(name = "follow", desc = "跟随某个玩家", args = "玩家名", category = "移动")

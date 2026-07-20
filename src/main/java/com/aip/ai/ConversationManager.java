@@ -119,6 +119,17 @@ public class ConversationManager {
                 systemPromptBuilder.append("攻击玩家，致他于死地。");
             }
         }
+        // v2.2.1：注入最近对话历史 + "不要重复"提示
+        try {
+            java.util.List<String> recent = aiPlayer.getRecentMessages(3);
+            if (recent != null && !recent.isEmpty()) {
+                systemPromptBuilder.append("\n\n【v2.2.1 复读机防护】你最近说过的几句话：\n");
+                for (int i = 0; i < recent.size(); i++) {
+                    systemPromptBuilder.append("  ").append(i + 1).append(". ").append(recent.get(i)).append("\n");
+                }
+                systemPromptBuilder.append("请用**完全不同**的方式表达，不要重复句式/词汇/标点。");
+            }
+        } catch (Exception ignored) {}
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 
         // 历史对话

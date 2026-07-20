@@ -7,6 +7,7 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 
 import java.util.Collection;
 import java.util.Map;
@@ -27,6 +28,8 @@ public class AIPlayerManager {
     private BukkitTask stuckCheckTask;
     /** v2.2.0：AI 空闲自言自语调度器 */
     private BukkitTask monologueTask;
+    /** v2.2.1：AI 虚空保护 + 饱食度补充任务（每 1 秒扫描一次） */
+    private BukkitTask voidGuardTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
     /** 每个 NPC 已打招呼的玩家名集合（避免对同一玩家反复打招呼） */
@@ -35,6 +38,10 @@ public class AIPlayerManager {
     private final Map<UUID, Long> lastFacePlayer = new ConcurrentHashMap<>();
     /** v2.1.4：每个 AI 最近一次生成复仇对话的时间戳（ms），5 秒节流 */
     private final Map<String, Long> lastRevengeTime = new ConcurrentHashMap<>();
+    /** v2.2.1：每个 AI 最近一次 fallback teleport 时间戳（ms），1.5 秒内不重复 */
+    private final Map<UUID, Long> lastTeleportFallback = new ConcurrentHashMap<>();
+    /** v2.2.1：每个 AI 连续 navigateTo 失败次数（≥3 时进入 5 秒静默期） */
+    private final Map<UUID, Integer> consecutiveFails = new ConcurrentHashMap<>();
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -247,6 +254,40 @@ public class AIPlayerManager {
         // 更新 AIPlayer 的 entityId 指向新实体（先记住旧 id，留给 StoryState 迁移用）
         UUID oldEntityId = p.getEntityId();
         p.setEntityId(actualUuid);
+        // v2.2.1：觉醒切模式 deferred —— 复活完成后再执行
+        try {
+            com.aip.story.StoryState state = plugin.getStoryManager() != null
+                    ? plugin.getStoryManager().getState(oldEntityId) : null;
+            if (state != null && state.isAwakeningPending()) {
+                final String killerName = state.getPendingKillerName();
+                final com.aip.story.StoryState finalState = state;
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    try {
+                        if (killerName != null && !killerName.isEmpty()) {
+                            Player killerPlayer = Bukkit.getPlayerExact(killerName);
+                            if (killerPlayer != null && killerPlayer.isOnline()) {
+                                killerPlayer.setGameMode(org.bukkit.GameMode.SURVIVAL);
+                                plugin.getLogger().info("[Story] 强制玩家 " + killerName + " 切回生存模式");
+                            }
+                        }
+                        Player entity = p.getEntity();
+                        if (entity != null) {
+                            entity.setGameMode(org.bukkit.GameMode.CREATIVE);
+                            entity.setAllowFlight(true);
+                            entity.setFlying(true);
+                        }
+                        p.sayInChat("现在，让我来控制战场！");
+                        plugin.getLogger().info("[Story] AI " + p.getName() + " 觉醒切模式：creative + fly + 强制玩家生存");
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("觉醒 deferred 切模式失败: " + e.getMessage());
+                    } finally {
+                        finalState.setAwakeningPending(false);
+                    }
+                }, 20L);  // 1 秒延迟（让 NPC 完全 spawn）
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("觉醒 deferred 检查失败: " + e.getMessage());
+        }
         // 清除死亡位置（已复活）
         p.setDeathLocation(null);
         // 清理 GameDataCollector 旧缓存，确保下次采集使用新实体
@@ -389,6 +430,8 @@ public class AIPlayerManager {
             monologueTask.cancel();
             monologueTask = null;
         }
+        // v2.2.1：虚空保护任务统一在 stopAutonomousTask 末尾清理
+        stopVoidGuardTask();
     }
 
     /**
@@ -400,6 +443,172 @@ public class AIPlayerManager {
     public void startMonologueTask() {
         if (monologueTask != null) return;
         monologueTask = new IdleMonologueTask(plugin).runTaskTimer(plugin, 100L, 100L);
+    }
+
+    /**
+     * v2.2.1：启动虚空保护 + 饱食度补充任务。
+     * <p>
+     * 每 1 秒扫描所有 AI：
+     *   - y &lt; 0 时 teleport 回主世界出生点（避免无限掉到 y=0 触发环境死亡）
+     *   - 饱食度 &lt; 6 时 setFoodLevel(20)（避免饿死）
+     * <p>
+     * 幂等：已启动则不重复。死亡时（entity 无效）自动跳过，不影响死亡处理。
+     */
+    public void startVoidGuardTask() {
+        if (voidGuardTask != null) return;
+        voidGuardTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            try {
+                for (AIPlayer aiPlayer : aiPlayers.values()) {
+                    try {
+                        Player ent = aiPlayer.getEntity();
+                        if (ent == null || !ent.isValid()) continue;
+                        // y < 0 时 teleport 回出生点
+                        if (ent.getLocation().getY() < 0) {
+                            Location spawn = ent.getWorld().getSpawnLocation();
+                            ent.teleport(spawn);
+                            plugin.getLogger().warning("[Story] AI " + aiPlayer.getName() + " 掉入虚空，已传送回出生点");
+                        }
+                        // 饱食度 < 6 时补充
+                        if (ent.getFoodLevel() < 6) {
+                            ent.setFoodLevel(20);
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("虚空保护扫描单个 AI 失败 [" + aiPlayer.getName() + "]: " + e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("虚空保护扫描失败: " + e.getMessage());
+            }
+        }, 20L, 20L);  // 1 秒后开始，每 1 秒
+    }
+
+    /**
+     * v2.2.1：停止虚空保护任务。
+     */
+    public void stopVoidGuardTask() {
+        if (voidGuardTask != null) {
+            voidGuardTask.cancel();
+            voidGuardTask = null;
+        }
+    }
+
+    /**
+     * v2.2.1：让 AI 寻路到指定位置（带连续失败冷却）。
+     * <p>
+     * 优先调用 {@link NpcHelper#navigateTo(Player, Location, double)}（Citizens A* 寻路）。
+     * 若 Citizens 不可用或抛异常则返回 false，由调用方决定 fallback。
+     * <p>
+     * 冷却策略：
+     *   - 单次成功：清零连续失败计数
+     *   - 单次失败：连续失败 +1
+     *   - 连续失败 ≥3 次：进入 5 秒静默期，静默期内直接返回 false 不再尝试
+     *   - 静默期结束：自动重置，连续失败归零
+     *
+     * @return true=Citizens 寻路成功；false=失败或处于静默期
+     */
+    public boolean navigateTo(AIPlayer ai, Location target) {
+        if (ai == null || target == null) return false;
+        Player entity = ai.getEntity();
+        if (entity == null || !entity.isValid()) return false;
+        UUID id = ai.getEntityId();
+        if (id == null) return false;
+
+        double speed = plugin.getConfigManager().getMoveSpeed();
+
+        // v2.2.1：连续失败 ≥3 次后，5 秒内不再 navigateTo
+        Integer fails = consecutiveFails.get(id);
+        if (fails != null && fails >= 3) {
+            long lastFail = lastTeleportFallback.getOrDefault(id, 0L);
+            if (System.currentTimeMillis() - lastFail < 5000L) {
+                return false;  // 静默期内，直接跳过
+            }
+            // 5 秒已过，重置计数
+            consecutiveFails.put(id, 0);
+        }
+
+        // 调 Citizens 的 navigateTo
+        try {
+            boolean success = NpcHelper.navigateTo(entity, target, speed);
+            if (success) {
+                // 成功：清零连续失败
+                consecutiveFails.put(id, 0);
+                lastTeleportFallback.remove(id);
+                return true;
+            }
+        } catch (Exception ignored) {
+            // Citizens API 抛异常 = 失败，落到下面 fallback
+        }
+
+        // 失败：连续失败 +1
+        int failCount = consecutiveFails.getOrDefault(id, 0) + 1;
+        consecutiveFails.put(id, failCount);
+        return false;
+    }
+
+    /**
+     * v2.2.1：fallback 分帧 teleport 模拟行走（带 1.5 秒冷却）。
+     * <p>
+     * 当 {@link #navigateTo(AIPlayer, Location)} 返回 false 时由调用方（如
+     * {@link com.aip.ai.CommandExecutor#walkTo}）调用。
+     * <p>
+     * 冷却策略：单个 AI 1.5 秒内不重复 fallback teleport（避免短时间反复瞬移）。
+     * 静默期由 {@link #navigateTo} 的"连续 3 次失败 5 秒"机制独立处理。
+     *
+     * @return true=实际执行了 fallback teleport；false=处于 1.5 秒冷却内，跳过
+     */
+    public boolean tryFallbackTeleport(AIPlayer ai, Location target, double totalDist, double speed) {
+        if (ai == null || target == null) return false;
+        Player entity = ai.getEntity();
+        if (entity == null || !entity.isValid()) return false;
+        UUID id = ai.getEntityId();
+        if (id == null) return false;
+
+        // 1.5 秒内不重复 fallback teleport
+        long now = System.currentTimeMillis();
+        long last = lastTeleportFallback.getOrDefault(id, 0L);
+        if (now - last < 1500L) {
+            return false;
+        }
+        lastTeleportFallback.put(id, now);
+
+        plugin.getLogger().warning("[AIPlayer] Citizens navigateTo 失败，回退到 teleport 模拟行走: "
+                + ai.getName() + " -> " + target);
+
+        // 距离太近直接 teleport
+        if (totalDist < 0.5) {
+            entity.teleport(target);
+            return true;
+        }
+        // 分帧 teleport 模拟"行走"
+        Location start = entity.getLocation();
+        int steps = Math.max(1, (int) Math.min(60, Math.ceil(totalDist / speed)));
+        Vector step = target.toVector().subtract(start.toVector()).multiply(1.0 / steps);
+        final int finalSteps = steps;
+        new BukkitRunnable() {
+            int i = 0;
+            @Override
+            public void run() {
+                if (i >= finalSteps || !entity.isValid()) {
+                    cancel();
+                    return;
+                }
+                Location next = entity.getLocation().add(step);
+                // 保留地面高度（避免穿墙下降）
+                next.setY(entity.getLocation().getY());
+                entity.teleport(next);
+                i++;
+            }
+        }.runTaskTimer(plugin, 0L, 5L);
+        return true;
+    }
+
+    /**
+     * v2.2.1：清空指定 AI 的 navigateTo 冷却计数（死亡/复活时调用，避免脏状态）。
+     */
+    public void clearNavigateCooldown(UUID aiEntityId) {
+        if (aiEntityId == null) return;
+        lastTeleportFallback.remove(aiEntityId);
+        consecutiveFails.remove(aiEntityId);
     }
 
     /**

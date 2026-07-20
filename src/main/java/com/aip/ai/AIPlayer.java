@@ -273,6 +273,31 @@ public class AIPlayer {
     }
 
     /**
+     * v2.2.1：返回对话历史最后 n 个 assistant 消息的 content，用于 prompt 注入"不要重复"。
+     * @param n 最多返回几条（<= 0 返回空 list）
+     * @return 消息 content 列表（按时间正序）
+     */
+    public java.util.List<String> getRecentMessages(int n) {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        if (n <= 0) return result;
+        java.util.List<java.util.Map<String, String>> hist = getConversationHistory();
+        if (hist == null || hist.isEmpty()) return result;
+        // 从尾部往回取最多 n 条 assistant
+        int count = 0;
+        for (int i = hist.size() - 1; i >= 0 && count < n; i--) {
+            java.util.Map<String, String> m = hist.get(i);
+            if (m == null) continue;
+            String role = m.get("role");
+            String content = m.get("content");
+            if ("assistant".equals(role) && content != null && !content.isEmpty()) {
+                result.add(0, content);  // 倒序插回正序
+                count++;
+            }
+        }
+        return result;
+    }
+
+    /**
      * 把消息以聊天框形式广播（只显示文字，不含命令）。
      * <p>
      * 30 秒内重复的消息（忽略大小写、首尾空格）会被拒绝广播，避免 AI 重复刷屏。

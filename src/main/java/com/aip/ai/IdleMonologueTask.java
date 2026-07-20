@@ -74,10 +74,22 @@ public class IdleMonologueTask extends BukkitRunnable {
                 // 异步调 LLM（chatOnce 内部会占 busy，主线程检查已通过即可）
                 Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                     try {
-                        String prompt = "你是 AIP " + aiName + "。当前剧情阶段 "
-                                + currentPhase.getDisplayName()
-                                + "。用一句话（≤20 字）表达你此刻的心理活动（OS），不要输出 [COMMAND:...]";
-                        String reply = target.getConversationManager().chatOnce(target, prompt);
+                        StringBuilder prompt = new StringBuilder();
+                        prompt.append("你是 AIP ").append(aiName)
+                                .append("。当前剧情阶段 ").append(currentPhase.getDisplayName())
+                                .append("。用一句话（≤20 字）表达你此刻的心理活动（OS），不要输出 [COMMAND:...]");
+                        // v2.2.1：注入最近心理活动 + 不要重复
+                        try {
+                            java.util.List<String> recent = target.getRecentMessages(3);
+                            if (recent != null && !recent.isEmpty()) {
+                                prompt.append("\n\n【v2.2.1 复读机防护】你最近的 3 句心理活动：\n");
+                                for (int i = 0; i < recent.size(); i++) {
+                                    prompt.append("  ").append(i + 1).append(". ").append(recent.get(i)).append("\n");
+                                }
+                                prompt.append("请用**完全不同**的方式表达，不要重复。");
+                            }
+                        } catch (Exception ignored) {}
+                        String reply = target.getConversationManager().chatOnce(target, prompt.toString());
                         if (reply == null || reply.isEmpty()) return;
                         String text = reply.replaceAll("\\[COMMAND:[^\\]]+\\]", "").trim();
                         if (text.isEmpty()) return;

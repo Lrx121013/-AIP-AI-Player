@@ -215,6 +215,7 @@ debug: false
 # ============================================================
 llm:
   temperature: 0.9   # LLM 温度，0.0=完全确定 1.0=平衡 2.0=非常随机
+  frequency-penalty: 0.5  # v2.2.1 复读机修复：频率/存在惩罚（-2.0~2.0），越大越抑制重复
 idle-monologue-min-seconds: 10
 idle-monologue-max-seconds: 20
 enable-threat-taunts: true

@@ -28,6 +28,10 @@ public class StoryState {
     private boolean rulebookRead;
     /** 阶段切换时锁定标记（防止循环触发） */
     private boolean transitionLocked;
+    /** v2.2.1：觉醒切模式 deferred 标记。死亡时 NPC 已被删除，无法立即执行 force_survival / creative / fly，由 AIPlayerManager.revive 复活完成后消费 */
+    private boolean awakeningPending;
+    /** v2.2.1：觉醒时记录的 killer 名称，revive 时用于 force_survival_player 指令 */
+    private String pendingKillerName;
 
     public StoryState(UUID ownerId) {
         this.ownerId = ownerId;
@@ -40,6 +44,8 @@ public class StoryState {
         this.rulebookDelivered = false;
         this.rulebookRead = false;
         this.transitionLocked = false;
+        this.awakeningPending = false;
+        this.pendingKillerName = null;
     }
 
     /**
@@ -55,7 +61,7 @@ public class StoryState {
         if (!StoryPhase.isValidTransition(currentPhase, next)) {
             // 同阶段或非法转移时打 log 但不报错
             if (currentPhase != next) {
-                System.out.println("[Story] [WARN] Illegal transition: " + currentPhase + " -> " + next + " (owner=" + ownerId + ")");
+                // v2.2.1：F2.1 移除 System.out.println，由调用方 StoryManager 处理
             }
             return false;
         }
@@ -64,7 +70,7 @@ public class StoryState {
             StoryPhase prev = currentPhase;
             this.currentPhase = next;
             this.phaseStartTime = System.currentTimeMillis();
-            System.out.println("[Story] [INFO] " + ownerId + " " + prev + " -> " + next);
+            // v2.2.1：F2.1 移除 System.out.println，StoryManager 在 transitionTo 之后会 broadcast 剧情 X 觉醒
             return true;
         } finally {
             transitionLocked = false;
@@ -89,6 +95,10 @@ public class StoryState {
     public void setRulebookDelivered(boolean rulebookDelivered) { this.rulebookDelivered = rulebookDelivered; }
     public boolean isRulebookRead() { return rulebookRead; }
     public void setRulebookRead(boolean rulebookRead) { this.rulebookRead = rulebookRead; }
+    public boolean isAwakeningPending() { return awakeningPending; }
+    public void setAwakeningPending(boolean awakeningPending) { this.awakeningPending = awakeningPending; }
+    public String getPendingKillerName() { return pendingKillerName; }
+    public void setPendingKillerName(String pendingKillerName) { this.pendingKillerName = pendingKillerName; }
 
     /**
      * 重置为初始状态（DORMANT），用于 revive 后重新开始故事

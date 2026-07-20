@@ -78,15 +78,29 @@ public class NpcDeathListener implements Listener {
         }
 
         // P3：长期记忆——记录死亡事件
+        // v2.2.1：killer=null 时读 lastDamageCause 转中文死因（如"摔落" / "饥饿" / "环境"）
         String killerNameForMemory;
+        String envKillerName = null;
         try {
             org.bukkit.entity.Player killerPlayer = event.getEntity().getKiller();
-            killerNameForMemory = killerPlayer != null ? killerPlayer.getName() : "未知";
+            if (killerPlayer != null) {
+                killerNameForMemory = killerPlayer.getName();
+            } else {
+                killerNameForMemory = "未知";
+                envKillerName = readLastDamageCause(event.getEntity());
+            }
         } catch (Exception e) {
             killerNameForMemory = "未知";
+            envKillerName = readLastDamageCause(event.getEntity());
         }
+        final String finalEnvKillerName = envKillerName;
         ai.getMemory().addRecord(MemoryRecord.Type.DEATH,
                 "被 " + killerNameForMemory + " 击杀", killerNameForMemory);
+
+        // v2.2.1：killer=null 时把环境死因也写到 log（StoryManager.onAiDeath 仍接 Player，传 null + 这里 log 增强）
+        if (finalEnvKillerName != null) {
+            plugin.getLogger().info("NPC " + name + " 死亡（环境: " + finalEnvKillerName + "）");
+        }
 
         // 仅移除实体，保留 AIPlayer（功能 7）—— 不调用 aiPlayerManager.remove(name)
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -124,6 +138,49 @@ public class NpcDeathListener implements Listener {
                     plugin.getLogger().warning("AI " + aiName + " 自动复活失败: " + e.getMessage());
                 }
             }, 100L);  // 5 秒后复活
+        }
+    }
+
+    /**
+     * v2.2.1：把 {@link org.bukkit.event.entity.EntityDamageEvent#getCause()} 翻译成中文死因。
+     * <p>
+     * 当 AI 被"环境"杀死（killer == null）时使用，例如摔落、饥饿、窒息、岩浆等。
+     * 失败时返回 null，调用方应继续使用"未知"。
+     */
+    private String readLastDamageCause(org.bukkit.entity.Player entity) {
+        try {
+            org.bukkit.event.entity.EntityDamageEvent lastDamage = entity.getLastDamageCause();
+            if (lastDamage == null) return null;
+            org.bukkit.event.entity.EntityDamageEvent.DamageCause cause = lastDamage.getCause();
+            if (cause == null) return null;
+            return switch (cause) {
+                case FALL -> "摔落";
+                case FIRE, FIRE_TICK -> "火焰";
+                case LAVA -> "岩浆";
+                case DROWNING -> "溺水";
+                case SUFFOCATION -> "窒息";
+                case STARVATION -> "饥饿";
+                case VOID -> "虚空";
+                case SUICIDE -> "自杀";
+                case MAGIC -> "魔法";
+                case POISON -> "中毒";
+                case WITHER -> "凋零";
+                case CRAMMING -> "挤压";
+                case FLY_INTO_WALL -> "撞墙";
+                case HOT_FLOOR -> "岩浆块";
+                case FREEZE -> "冰冻";
+                case KILL -> "/kill";
+                case WORLD_BORDER -> "世界边界";
+                case ENTITY_ATTACK, ENTITY_SWEEP_ATTACK -> "实体攻击";
+                case PROJECTILE -> "弹射物";
+                case BLOCK_EXPLOSION, ENTITY_EXPLOSION -> "爆炸";
+                case FALLING_BLOCK -> "方块砸";
+                case THORNS -> "荆棘";
+                case SONIC_BOOM -> "音波";
+                default -> "环境(" + cause.name() + ")";
+            };
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 }

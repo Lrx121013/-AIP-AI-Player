@@ -121,24 +121,23 @@ public class StoryManager {
             state.setAiDeathCount(state.getAiDeathCount() + 1);
             int kills = state.getAiDeathCount();
             int required = plugin.getConfigManager().getAwakeningKills();
-            plugin.getLogger().info("[Story] " + ai.getName() + " 死亡 " + kills + "/" + required);
+            int remaining = Math.max(0, required - kills);
+            if (remaining > 0) {
+                plugin.getLogger().info("[Story] " + ai.getName() + " 死亡 " + kills + "/" + required + "（觉醒还需 " + remaining + " 次）");
+            } else {
+                plugin.getLogger().info("[Story] " + ai.getName() + " 死亡 " + kills + " 次（即将觉醒）");
+            }
 
             if (kills >= required) {
                 if (state.transitionTo(StoryPhase.AWAKENING)) {
                     String killerName = killer != null ? killer.getName() : "未知";
                     StageAction.broadcast("§c§l[剧情] §4" + ai.getName() + " §c被 " + killerName + " 击杀了 " + kills + " 次后……觉醒了！");
                     StageAction.say(ai, "我受够了！我要开始反击！");
-                    // v2.2.0：觉醒瞬间立即切创造 + 飞行 + 强制玩家生存（不等到 AERIAL_ASSAULT）
-                    try {
-                        if (killer != null && killer.isOnline()) {
-                            StageAction.runCommand(ai, "force_survival_player " + killer.getName());
-                        }
-                        StageAction.runCommand(ai, "gamemode creative");
-                        StageAction.runCommand(ai, "fly on");
-                        StageAction.say(ai, "现在，让我来控制战场！");
-                    } catch (Exception e) {
-                        plugin.getLogger().warning("觉醒切模式失败: " + e.getMessage());
-                    }
+                    // v2.2.1：觉醒切模式改为 deferred —— 死亡时 NPC 已删除，命令无效
+                    // 改为设 pending 标记，由 AIPlayerManager.revive 复活完成后再执行
+                    state.setAwakeningPending(true);
+                    state.setPendingKillerName(killer != null ? killer.getName() : null);
+                    plugin.getLogger().info("[Story] 觉醒切模式 deferred（pending=true，等复活后执行）");
                     // 立即攻击 killer
                     if (killer != null && killer.isOnline()) {
                         StageAction.runCommand(ai, "attack " + killer.getName());
@@ -165,7 +164,8 @@ public class StoryManager {
             state.setPlayerKillCount(state.getPlayerKillCount() + 1);
             int kills = state.getPlayerKillCount();
             int required = plugin.getConfigManager().getAerialKills();
-            plugin.getLogger().info("[Story] " + ai.getName() + " 杀玩家 " + kills + "/" + required);
+            int remaining = Math.max(0, required - kills);
+            plugin.getLogger().info("[Story] " + ai.getName() + " 杀玩家 " + kills + "/" + required + "（" + (remaining > 0 ? "还需 " + remaining + " 次进入空袭" : "即将进入空袭阶段") + "）");
 
             if (kills >= required) {
                 if (state.transitionTo(StoryPhase.AERIAL_ASSAULT)) {

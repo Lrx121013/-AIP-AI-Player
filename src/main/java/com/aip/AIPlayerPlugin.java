@@ -119,6 +119,11 @@ public class AIPlayerPlugin extends JavaPlugin {
             aiPlayerManager.startMonologueTask();
         }
 
+        // v2.2.1 启动虚空保护任务（每 1 秒扫描，y<0 回出生点 + 饱食度 < 6 补充）
+        if (aiPlayerManager != null) {
+            aiPlayerManager.startVoidGuardTask();
+        }
+
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
         if (getCommand("aip") != null) {
