@@ -65,6 +65,11 @@ public class ConversationManager {
         if (!goalSummary.isEmpty()) {
             systemPromptBuilder.append("\n").append(goalSummary);
         }
+        // 反射规则摘要：让 AI 知道当前已定义的自动反射规则
+        String reflexSummary = aiPlayer.getReflexManager().getPromptSummary();
+        if (reflexSummary != null && !reflexSummary.isEmpty()) {
+            systemPromptBuilder.append("\n\n").append(reflexSummary);
+        }
         // P3：注入长期记忆摘要
         String memorySummary = aiPlayer.getMemory().getPromptSummary();
         if (!memorySummary.isEmpty()) {

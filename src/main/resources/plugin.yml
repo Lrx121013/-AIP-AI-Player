@@ -35,6 +35,7 @@ commands:
       /aip team target <player> - Set coordination target
       /aip approve <id> - Approve pending AI command
       /aip reject <id> - Reject pending AI command
+      /aip reflex list <ai> - View AI reflex rules
     aliases:
       - aiplayer
       - ai

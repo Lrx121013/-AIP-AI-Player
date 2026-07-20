@@ -53,6 +53,11 @@ ai:
   # 是否自动复活死亡的 AI 玩家
   auto-revive: true
 
+  # 反射规则系统（AI 自定义触发式自动动作）
+  max-reflex-rules: 8
+  reflex-min-cooldown-ms: 1000
+  reflex-check-interval: 20
+
   # 反派模式：开启后所有 AI 强制 VILLAIN 人格
   villain-mode: false
 

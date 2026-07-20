@@ -53,6 +53,8 @@ public class AIPlayer {
     private String lastQueryResult;
     /** P2：长期目标管理器 */
     private GoalManager goalManager;
+    /** 反射规则管理器（条件反射式自动动作） */
+    private ReflexManager reflexManager;
     /** P3：长期记忆系统 */
     private final LongTermMemory memory = new LongTermMemory();
     /** P1：AI 正在思考的忙标记（防重入），原子操作 */
@@ -68,6 +70,7 @@ public class AIPlayer {
         this.health = 20.0;
         this.foodLevel = 20;
         this.goalManager = new GoalManager(plugin, this);
+        this.reflexManager = new ReflexManager(plugin, this);
     }
 
     public String getName() { return name; }
@@ -126,6 +129,9 @@ public class AIPlayer {
 
     /** P2：长期目标管理器 */
     public GoalManager getGoalManager() { return goalManager; }
+
+    /** 反射规则管理器 */
+    public ReflexManager getReflexManager() { return reflexManager; }
 
     /** P3：长期记忆系统 */
     public LongTermMemory getMemory() { return memory; }

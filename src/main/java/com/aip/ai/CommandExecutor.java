@@ -237,6 +237,12 @@ public class CommandExecutor {
                 case "combo" -> handleCombo(entity, args);
                 case "emote" -> handleEmote(entity, args);
                 case "strategy" -> handleStrategy(aiPlayer, args);
+                // 反射规则命令
+                case "reflex_add" -> handleReflexAdd(aiPlayer, args);
+                case "reflex_list" -> handleReflexList(aiPlayer);
+                case "reflex_remove" -> handleReflexRemove(aiPlayer, args);
+                case "reflex_clear" -> handleReflexClear(aiPlayer);
+                case "reflex_toggle" -> handleReflexToggle(aiPlayer, args);
                 // P3：查询命令（返回 String，结果回流给 AIPlayer 下一轮注入）
                 case "query_players" -> {
                     String result = handleQueryPlayers(entity, args);
@@ -314,7 +320,7 @@ public class CommandExecutor {
 
         // 预定义 category 顺序，保证文档可读性
         List<String> categoryOrder = List.of(
-                "查询", "移动", "视角", "方块", "战斗", "物品", "聊天", "姿态", "动作", "自身状态", "OP", "策略", "其他"
+                "查询", "移动", "视角", "方块", "战斗", "物品", "聊天", "姿态", "动作", "自身状态", "OP", "策略", "其他", "反射"
         );
         Map<String, List<AICommand>> grouped = new LinkedHashMap<>();
         for (String cat : categoryOrder) grouped.put(cat, new ArrayList<>());
@@ -1249,6 +1255,91 @@ public class CommandExecutor {
         // args[0] = 策略名, args[1] = 目标玩家名
         String result = plugin.getStrategyEngine().startStrategy(aiPlayer, args[0], args[1]);
         plugin.getLogger().info("策略执行: " + result);
+    }
+
+    // ===== 反射规则命令 =====
+
+    /** reflex_add <trigger> <condition> <action...> —— 添加反射规则，返回规则 ID */
+    @AICommand(name = "reflex_add", desc = "添加反射规则（触发器 条件 动作）", args = "trigger condition action...", category = "反射")
+    private void handleReflexAdd(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 3) {
+            throw new RuntimeException("用法：reflex_add <trigger> <condition> <action...>");
+        }
+        String trigger = args[0];
+        String condition = args[1];
+        StringBuilder actionBuilder = new StringBuilder();
+        for (int i = 2; i < args.length; i++) {
+            if (i > 2) actionBuilder.append(" ");
+            actionBuilder.append(args[i]);
+        }
+        String action = actionBuilder.toString();
+        // 默认冷却 2000ms（AI 可在 action 后追加 " cooldown <ms>" 调整，但本实现简化为固定默认值）
+        int cooldownMs = 2000;
+        // 检查 action 末尾是否有 " cooldown <ms>" 参数
+        if (action.endsWith(" cooldown") || action.contains(" cooldown ")) {
+            String[] parts = action.split("\\s+");
+            for (int i = 0; i < parts.length - 1; i++) {
+                if (parts[i].equals("cooldown")) {
+                    try {
+                        cooldownMs = Integer.parseInt(parts[i + 1]);
+                        // 从 action 中移除 " cooldown <ms>" 部分
+                        StringBuilder cleaned = new StringBuilder();
+                        for (int j = 0; j < parts.length; j++) {
+                            if (j == i || (j == i + 1)) continue;
+                            if (cleaned.length() > 0) cleaned.append(" ");
+                            cleaned.append(parts[j]);
+                        }
+                        action = cleaned.toString();
+                    } catch (NumberFormatException ignored) {
+                        // 用默认 2000
+                    }
+                    break;
+                }
+            }
+        }
+        String id = aiPlayer.getReflexManager().addRule(trigger, condition, action, cooldownMs);
+        aiPlayer.setLastQueryResult("已添加反射规则 " + id + "：" + trigger + " " + condition + " 时执行 [" + action + "]，冷却 " + cooldownMs + "ms");
+    }
+
+    /** reflex_list —— 列出所有反射规则 */
+    @AICommand(name = "reflex_list", desc = "列出所有反射规则", args = "", category = "反射")
+    private void handleReflexList(AIPlayer aiPlayer) {
+        String list = aiPlayer.getReflexManager().listRules();
+        aiPlayer.setLastQueryResult(list);
+    }
+
+    /** reflex_remove <id> —— 删除指定反射规则 */
+    @AICommand(name = "reflex_remove", desc = "删除指定反射规则", args = "id", category = "反射")
+    private void handleReflexRemove(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 1) {
+            throw new RuntimeException("用法：reflex_remove <id>");
+        }
+        boolean ok = aiPlayer.getReflexManager().removeRule(args[0]);
+        if (!ok) {
+            throw new RuntimeException("未找到反射规则：" + args[0]);
+        }
+        aiPlayer.setLastQueryResult("已删除反射规则 " + args[0]);
+    }
+
+    /** reflex_clear —— 清空所有反射规则 */
+    @AICommand(name = "reflex_clear", desc = "清空所有反射规则", args = "", category = "反射")
+    private void handleReflexClear(AIPlayer aiPlayer) {
+        aiPlayer.getReflexManager().clearRules();
+        aiPlayer.setLastQueryResult("已清空所有反射规则");
+    }
+
+    /** reflex_toggle <id> <on|off> —— 启用/禁用反射规则 */
+    @AICommand(name = "reflex_toggle", desc = "启用或禁用反射规则", args = "id on|off", category = "反射")
+    private void handleReflexToggle(AIPlayer aiPlayer, String[] args) {
+        if (args.length < 2) {
+            throw new RuntimeException("用法：reflex_toggle <id> <on|off>");
+        }
+        boolean enabled = args[1].equalsIgnoreCase("on") || args[1].equalsIgnoreCase("true");
+        boolean ok = aiPlayer.getReflexManager().toggleRule(args[0], enabled);
+        if (!ok) {
+            throw new RuntimeException("未找到反射规则：" + args[0]);
+        }
+        aiPlayer.setLastQueryResult("反射规则 " + args[0] + " 已" + (enabled ? "启用" : "禁用"));
     }
 
     // ===== P3：查询命令（返回 String，结果回流给 AIPlayer 下一轮注入） =====

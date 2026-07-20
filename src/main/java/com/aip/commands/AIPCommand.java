@@ -105,6 +105,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(ok ? "§c已拒绝" : "§c找不到该审批 ID 或已处理");
                 return true;
             }
+            // P5 新增子命令：反射规则查看
+            case "reflex" -> handleReflex(sender, args);
             default -> sendHelp(sender);
         }
         return true;
@@ -1125,6 +1127,31 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // ===== P5 功能：查看 AI 反射规则 =====
+    /** /aip reflex list <ai> —— 查看 AI 的反射规则列表 */
+    private void handleReflex(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage("§c用法：/aip reflex list <ai>");
+            return;
+        }
+        String sub = args[1].toLowerCase();
+        if (!sub.equals("list")) {
+            sender.sendMessage("§c未知子命令：" + sub + "（仅支持 list）");
+            return;
+        }
+        String aiName = args[2];
+        AIPlayer aiPlayer = plugin.getAiPlayerManager().get(aiName);
+        if (aiPlayer == null) {
+            sender.sendMessage("§c未找到 AI 玩家：" + aiName);
+            return;
+        }
+        String list = aiPlayer.getReflexManager().listRules();
+        sender.sendMessage("§6=== AI " + aiName + " 的反射规则 ===");
+        for (String line : list.split("\n")) {
+            sender.sendMessage("§7" + line);
+        }
+    }
+
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 0) return java.util.Collections.emptyList();
@@ -1143,7 +1170,7 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin",
                     "history", "personality", "team", "task", "relation", "revive",
                     "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory",
-                    "approve", "reject");
+                    "approve", "reject", "reflex");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")
@@ -1163,6 +1190,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                 result = Arrays.asList("show");
             } else if (sub.equals("memory")) {
                 result = Arrays.asList("show");
+            } else if (sub.equals("reflex")) {
+                // /aip reflex list <ai>
+                result = Arrays.asList("list");
             }
         } else if (args.length == 3) {
             String sub = args[0].toLowerCase();
@@ -1195,6 +1225,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                 result = Bukkit.getOnlinePlayers().stream().map(Player::getName)
                         .collect(Collectors.toList());
             } else if (sub.equals("memory") && action.equals("show")) {
+                result = aiNames;
+            } else if (sub.equals("reflex") && action.equals("list")) {
+                // /aip reflex list <ai>
                 result = aiNames;
             }
         } else if (args.length == 4) {

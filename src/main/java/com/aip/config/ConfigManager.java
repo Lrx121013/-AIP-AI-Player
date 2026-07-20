@@ -124,6 +124,22 @@ public class ConfigManager {
         return plugin.getConfig().getBoolean("ai.auto-revive", true);
     }
 
+    /** 每个 AI 最多反射规则数，实时读取配置 */
+    public int getMaxReflexRules() {
+        return plugin.getConfig().getInt("ai.max-reflex-rules", 8);
+    }
+
+    /** 反射规则冷却下限（毫秒），实时读取配置 */
+    public int getReflexMinCooldownMs() {
+        return plugin.getConfig().getInt("ai.reflex-min-cooldown-ms", 1000);
+    }
+
+    /** 反射规则周期检查间隔（ticks），必须 > 0，实时读取配置 */
+    public int getReflexCheckInterval() {
+        int v = plugin.getConfig().getInt("ai.reflex-check-interval", 20);
+        return v > 0 ? v : 20;
+    }
+
     public boolean isStream() {
         return plugin.getConfig().getBoolean("provider.stream", true);
     }

@@ -62,6 +62,9 @@ public class AIPlayerManager {
             aiPlayer.setPersonality(Personality.VILLAIN);
         }
 
+        // 启动反射规则周期检查任务（幂等：已启动则不重复）
+        aiPlayer.getReflexManager().startCheckTask();
+
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
@@ -93,6 +96,8 @@ public class AIPlayerManager {
             aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
             aiPlayer.setPersonality(Personality.VILLAIN);
         }
+        // 启动反射规则周期检查任务（幂等：已启动则不重复）
+        aiPlayer.getReflexManager().startCheckTask();
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
         return aiPlayer;
@@ -120,6 +125,8 @@ public class AIPlayerManager {
         plugin.getGameDataCollector().invalidateCache(p.getEntityId());
         // 取消该 AI 所有未完成的追击任务，避免任务结束后操作已移除的实体
         p.getGoalManager().cancelAllPursuits();
+        // 取消反射规则周期检查任务并清空规则列表，避免任务操作已移除的实体
+        p.getReflexManager().cancel();
         Player player = p.getEntity();
         if (player != null && player.isValid()) {
             NpcHelper.removeNpc(player);
@@ -178,6 +185,8 @@ public class AIPlayerManager {
         p.setDeathLocation(null);
         // 清理 GameDataCollector 旧缓存，确保下次采集使用新实体
         plugin.getGameDataCollector().invalidateCache(actualUuid);
+        // 启动反射规则周期检查任务（幂等：若之前已被 cancel，此处会重新启动）
+        p.getReflexManager().startCheckTask();
         plugin.getLogger().info("AI " + name + " 复活成功");
         return p;
     }
