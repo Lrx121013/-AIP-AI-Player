@@ -63,7 +63,8 @@ public class RevengeLine {
 
         String aiName = ai.getName();
         String killerName = killer != null ? killer.getName() : "某人";
-        int deathCount = state.getAiDeathCount();
+        // v2.2.7：火柴盒版移除了 getAiDeathCount() 字段（不再因 AI 死亡推进阶段）
+        int deathCount = 0;
         StoryPhase phase = state.getCurrentPhase();
 
         String prompt = buildPrompt(aiName, killerName, deathCount, phase);
@@ -96,6 +97,8 @@ public class RevengeLine {
      * 根据阶段构建 prompt
      */
     private static String buildPrompt(String aiName, String killerName, int deathCount, StoryPhase phase) {
+        // v2.2.7：火柴盒版不再有 DORMANT/AWAKENING/AERIAL_ASSAULT/PVP_DUEL/RULEBOOK/DICTATORSHIP/BETRAYAL
+        // 简化为通用复仇对话（按当前章节自适应）
         // 限制 token：保持 ≤200 字
         StringBuilder sb = new StringBuilder(160);
         sb.append("你是 ").append(aiName).append("，刚刚被 ").append(killerName).append(" 击杀，");
@@ -104,32 +107,8 @@ public class RevengeLine {
         } else {
             sb.append("但你又复活了。");
         }
-        sb.append("用一句话（≤30字）表达" );
-        switch (phase) {
-            case DORMANT:
-                sb.append("重新站起来的迷茫和决心。不要输出 [COMMAND:...]。");
-                break;
-            case AWAKENING:
-                sb.append("觉醒后的愤怒与复仇决心。不要输出 [COMMAND:...]。");
-                break;
-            case AERIAL_ASSAULT:
-                sb.append("空中轰炸阶段的傲慢和威慑，不要输出 [COMMAND:...]。");
-                break;
-            case PVP_DUEL:
-                sb.append("顶级对决的挑衅与自信，不要输出 [COMMAND:...]。");
-                break;
-            case RULEBOOK:
-                sb.append("制度统治者的庄重宣告，不要输出 [COMMAND:...]。");
-                break;
-            case DICTATORSHIP:
-                sb.append("独裁者的命令和嘲讽，不要输出 [COMMAND:...]。");
-                break;
-            case BETRAYAL:
-                sb.append("背叛者的决绝与威胁，不要输出 [COMMAND:...]。");
-                break;
-            default:
-                sb.append("重生的感觉，不要输出 [COMMAND:...]。");
-        }
+        sb.append("当前阶段：").append(phase == null ? "未知" : phase.getDisplayName())
+          .append("。用一句话（≤30字）表达你此刻的复仇心理，不要输出 [COMMAND:...]。");
         return sb.toString();
     }
 

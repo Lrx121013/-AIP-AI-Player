@@ -50,7 +50,9 @@ public class IdleMonologueTask extends BukkitRunnable {
                 StoryState state = ai.getStoryState();
                 if (state == null) continue;
                 StoryPhase phase = state.getCurrentPhase();
-                if (phase == null || phase == StoryPhase.DORMANT || phase == StoryPhase.COMPLETED) continue;
+                // v2.2.7：火柴盒版已移除 DORMANT；只需检查故事未开始 / 已完成
+                if (phase == null || !state.isStoryStarted() || state.isStoryCompleted()
+                        || phase == StoryPhase.COMPLETED) continue;
 
                 UUID id = ai.getEntityId();
                 Long last = lastMonologue.get(id);

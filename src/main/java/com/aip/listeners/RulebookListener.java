@@ -1,8 +1,6 @@
 package com.aip.listeners;
 
 import com.aip.AIPlayerPlugin;
-import com.aip.ai.AIPlayer;
-import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -14,13 +12,12 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 
-import java.util.Map;
-
 /**
- * 监听玩家阅读"AI 制度之书"事件
+ * v2.2.7：监听"AI 制度之书"阅读事件（已废弃）
  * <p>
- * 玩家在书与笔界面签名（PlayerEditBookEvent）或手持已签名的书右击（PlayerInteractEvent）时触发。
- * 检测书的标题是否是"AI 制度之书"，若是则调用 StoryManager.onRulebookRead 推进阶段。
+ * 火柴盒版移除了 Rulebook 阶段（书与笔的制度统治玩法）。
+ * 本类保留为占位 Listener，检测到玩家阅读"AI 制度之书"时仅打印日志，
+ * 不再推进任何故事阶段（由 StoryManager.tickChapter 周期任务独立驱动）。
  */
 public class RulebookListener implements Listener {
 
@@ -30,33 +27,18 @@ public class RulebookListener implements Listener {
         this.plugin = plugin;
     }
 
-    /**
-     * 优先方案：监听 PlayerEditBookEvent（玩家在书与笔界面签名后）
-     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBookEdit(PlayerEditBookEvent event) {
-        Player reader = event.getPlayer();
-        ItemStack hand = reader.getInventory().getItemInMainHand();
-        if (hand.getType() != Material.WRITTEN_BOOK) {
-            ItemStack off = reader.getInventory().getItemInOffHand();
-            if (off.getType() != Material.WRITTEN_BOOK) return;
-            hand = off;
+        // v2.2.7 stub：原 StoryManager.onRulebookRead / state.isRulebookDelivered / isRulebookRead 已废弃
+        if (!isAiRulebook(event.getPlayer().getInventory().getItemInMainHand())
+                && !isAiRulebook(event.getPlayer().getInventory().getItemInOffHand())) {
+            return;
         }
-        if (!isAiRulebook(hand)) return;
-
-        AIPlayer ai = findAiByRulebook();
-        if (ai == null) return;
-
-        try {
-            plugin.getStoryManager().onRulebookRead(ai, reader);
-        } catch (Exception e) {
-            plugin.getLogger().warning("RulebookListener 通知 StoryManager 失败: " + e.getMessage());
+        if (plugin.getConfigManager() != null && plugin.getConfigManager().isDebug()) {
+            plugin.getLogger().info("检测到玩家 " + event.getPlayer().getName() + " 阅读 AI 制度之书（v2.2.7 占位）");
         }
     }
 
-    /**
-     * Fallback 方案：监听 PlayerInteractEvent（手持已签名书右击）
-     */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInteract(PlayerInteractEvent event) {
         if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) {
@@ -65,30 +47,18 @@ public class RulebookListener implements Listener {
         ItemStack hand = event.getItem();
         if (hand == null || hand.getType() != Material.WRITTEN_BOOK) return;
         if (!isAiRulebook(hand)) return;
-
+        // v2.2.7 stub：仅记录日志
         Player reader = event.getPlayer();
-        // 1 秒内同一玩家只触发一次
-        long now = System.currentTimeMillis();
-        Long last = lastTrigger.get(reader.getUniqueId());
-        if (last != null && now - last < 1000L) return;
-        lastTrigger.put(reader.getUniqueId(), now);
-
-        AIPlayer ai = findAiByRulebook();
-        if (ai == null) return;
-
-        try {
-            plugin.getStoryManager().onRulebookRead(ai, reader);
-        } catch (Exception e) {
-            plugin.getLogger().warning("RulebookListener(PlayerInteractEvent) 失败: " + e.getMessage());
+        if (plugin.getConfigManager() != null && plugin.getConfigManager().isDebug()) {
+            plugin.getLogger().info("检测到玩家 " + reader.getName() + " 右击 AI 制度之书（v2.2.7 占位）");
         }
     }
-
-    private final Map<java.util.UUID, Long> lastTrigger = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * 判断物品是否是"AI 制度之书"
      */
     private boolean isAiRulebook(ItemStack book) {
+        if (book == null || !book.hasItemMeta()) return false;
         if (book.getItemMeta() instanceof BookMeta meta) {
             String title = meta.getTitle();
             if (title != null && title.contains("AI 制度之书")) return true;
@@ -96,18 +66,5 @@ public class RulebookListener implements Listener {
             if (author != null && author.contains("Evil AI")) return true;
         }
         return false;
-    }
-
-    /**
-     * 找到持有 rulebookDelivered=true 的 AI（最近一个）
-     */
-    private AIPlayer findAiByRulebook() {
-        for (AIPlayer ai : plugin.getAiPlayerManager().getAll()) {
-            com.aip.story.StoryState state = ai.getStoryState();
-            if (state != null && state.isRulebookDelivered() && !state.isRulebookRead()) {
-                return ai;
-            }
-        }
-        return null;
     }
 }

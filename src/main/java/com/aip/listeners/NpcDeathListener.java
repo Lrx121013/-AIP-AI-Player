@@ -97,7 +97,7 @@ public class NpcDeathListener implements Listener {
         ai.getMemory().addRecord(MemoryRecord.Type.DEATH,
                 "被 " + killerNameForMemory + " 击杀", killerNameForMemory);
 
-        // v2.2.1：killer=null 时把环境死因也写到 log（StoryManager.onAiDeath 仍接 Player，传 null + 这里 log 增强）
+        // v2.2.1：killer=null 时把环境死因也写到 log
         if (finalEnvKillerName != null) {
             plugin.getLogger().info("NPC " + name + " 死亡（环境: " + finalEnvKillerName + "）");
         }

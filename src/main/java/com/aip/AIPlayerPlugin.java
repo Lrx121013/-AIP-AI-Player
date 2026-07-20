@@ -15,6 +15,7 @@ import com.aip.ai.StrategyEngine;
 import com.aip.ai.TaskManager;
 import com.aip.ai.TeamManager;
 import com.aip.commands.AIPCommand;
+import com.aip.commands.AistoryCommand;
 import com.aip.commands.GuiCommand;
 import com.aip.config.ConfigManager;
 import com.aip.gui.GuiManager;
@@ -139,6 +140,15 @@ public class AIPlayerPlugin extends JavaPlugin {
             getLogger().severe("无法注册 /k 命令，plugin.yml 配置错误！");
         }
 
+        // v2.2.7：注册独立 /aistory 命令（启动 / 退出 / 状态）
+        if (getCommand("aistory") != null) {
+            AistoryCommand aistoryCmd = new AistoryCommand(this);
+            getCommand("aistory").setExecutor(aistoryCmd);
+            getCommand("aistory").setTabCompleter(aistoryCmd);
+        } else {
+            getLogger().warning("无法注册 /aistory 命令，plugin.yml 配置错误！");
+        }
+
         // 5. 注册事件监听器
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new NpcDeathListener(this), this);
@@ -150,8 +160,6 @@ public class AIPlayerPlugin extends JavaPlugin {
         // v2.1.3 故事模式监听器
         getServer().getPluginManager().registerEvents(new com.aip.listeners.AiDeathListener(this), this);
         getServer().getPluginManager().registerEvents(new com.aip.listeners.RulebookListener(this), this);
-        // v2.2.2：故事模式命令拦截器（禁止觉醒后玩家切游戏模式/fly）
-        getServer().getPluginManager().registerEvents(new StoryModeCommandInterceptor(this), this);
         if (guiManager != null) {
             getServer().getPluginManager().registerEvents(new GuiListener(this), this);
         } else {

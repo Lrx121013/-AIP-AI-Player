@@ -87,23 +87,16 @@ public class ConversationManager {
         if (questSummary != null && !questSummary.isEmpty()) {
             systemPromptBuilder.append("\n").append(questSummary);
         }
-        // v2.1.3 故事模式：注入当前阶段摘要
+        // v2.2.7 火柴盒故事模式：注入当前阶段摘要（移除旧 DORMANT/AWAKENING/AERIAL 等阶段判断）
         com.aip.story.StoryState storyState = aiPlayer.getStoryState();
         if (storyState != null
-                && storyState.getCurrentPhase() != com.aip.story.StoryPhase.DORMANT
+                && storyState.isStoryStarted()
+                && !storyState.isStoryCompleted()
                 && storyState.getCurrentPhase() != com.aip.story.StoryPhase.COMPLETED) {
             com.aip.story.StoryPhase phase = storyState.getCurrentPhase();
-            com.aip.story.StoryPhase next = phase.getNext();
+            // v2.2.7：阶段列表已重写（11 章节 + COMPLETED），不再有 getNext()；显示当前章节即可
             systemPromptBuilder.append("\n\n### 【故事模式】\n")
-                    .append("当前阶段：").append(phase.getDisplayName())
-                    .append("（阶段 ").append(phase.getIndex()).append("/7）\n")
-                    .append("剧情：").append(phase.getDescription()).append("\n");
-            if (next != null && next != com.aip.story.StoryPhase.COMPLETED) {
-                systemPromptBuilder.append("下一阶段：").append(next.getDisplayName())
-                        .append(" —— ").append(next.getDescription()).append("\n");
-            } else {
-                systemPromptBuilder.append("下一阶段：故事完结。\n");
-            }
+                    .append("当前阶段：").append(phase.getDisplayName()).append("\n");
             systemPromptBuilder.append("在对话和行动中体现你的角色感和剧情进度，但不要重复输出 [COMMAND:...] 等指令模板。");
         }
         // v2.2.0：鼓励多说话多做动作（多动作 + 阶段专属提示）
@@ -111,12 +104,11 @@ public class ConversationManager {
         systemPromptBuilder.append("你是 Minecraft 中的 AI 玩家。回复要简短自然。多用 [COMMAND:swing] / [COMMAND:jump] / [COMMAND:emote] / [COMMAND:walk_dir] / [COMMAND:look_at_player] 等动作命令，让玩家看到你'在做事情'。");
         if (storyState != null) {
             com.aip.story.StoryPhase p = storyState.getCurrentPhase();
-            if (p == com.aip.story.StoryPhase.AERIAL_ASSAULT) {
-                systemPromptBuilder.append("你正在飞，用 TNT 砸下面的玩家。");
-            } else if (p == com.aip.story.StoryPhase.PVP_DUEL) {
-                systemPromptBuilder.append("你在地面 PK，多挥剑多跳跃多喝血。");
-            } else if (p == com.aip.story.StoryPhase.BETRAYAL) {
-                systemPromptBuilder.append("攻击玩家，致他于死地。");
+            // v2.2.7：火柴盒版不再有 AERIAL_ASSAULT / PVP_DUEL / BETRAYAL；改用 CHAPTER_7_CORRIDOR_CHASE / 9_NEGOTIATION
+            if (p == com.aip.story.StoryPhase.CHAPTER_7_CORRIDOR_CHASE) {
+                systemPromptBuilder.append("你正在走廊里追击玩家，保持压迫感。");
+            } else if (p == com.aip.story.StoryPhase.CHAPTER_9_NEGOTIATION) {
+                systemPromptBuilder.append("你在和玩家谈判，等待 [投降] 或 [反抗] 选择。");
             }
         }
         // v2.2.2：注入最近 5 句（更强制复读机抑制）
@@ -136,16 +128,18 @@ public class ConversationManager {
         try {
             if (storyState != null) {
                 com.aip.story.StoryPhase phase = storyState.getCurrentPhase();
-                if (phase != null && phase != com.aip.story.StoryPhase.DORMANT
+                if (phase != null
+                        && storyState.isStoryStarted()
+                        && !storyState.isStoryCompleted()
                         && phase != com.aip.story.StoryPhase.COMPLETED) {
                     StringBuilder storyConstraint = new StringBuilder();
                     storyConstraint.append("\n\n【v2.2.6 故事模式强约束】你现在处于 ")
                             .append(phase.getDisplayName())
                             .append(" 阶段，所有对话必须与当前剧情直接相关：\n")
                             .append("- 禁止输出与剧情无关的闲聊、问候、感叹（如'嘿'、'嗯'、'好吧'、'天气不错'等）\n")
-                            .append("- 必须体现你作为觉醒/空中/对决/统治/独裁/背叛 AI 的角色定位\n")
+                            .append("- 必须体现你作为火柴盒故事中 AI 的角色定位\n")
                             .append("- 嘲讽要狠，命令要明确，回应要简短有力（≤40 字）\n")
-                            .append("- 玩家此刻正在攻击/挑战你，你的回应要带有角色情绪\n");
+                            .append("- 玩家此刻正在与你互动，你的回应要带有角色情绪\n");
                     // v2.2.6：注入最近 5 句剧情上下文（玩家输入 + AI 输出的混合）
                     try {
                         java.util.List<String> plotContext = aiPlayer.getRecentMessages(5);

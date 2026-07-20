@@ -71,15 +71,8 @@ public class NpcKillListener implements Listener {
 
         plugin.getLogger().info("AI " + ai.getName() + " 杀死了玩家 " + victimName);
 
-        // v2.1.3 故事模式：通知 StoryManager 推进阶段
-        try {
-            com.aip.story.StoryManager sm = plugin.getStoryManager();
-            if (sm != null) {
-                sm.onPlayerDeathByAi(ai, deadPlayer);
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("NpcKillListener 通知 StoryManager 失败: " + e.getMessage());
-        }
+        // v2.2.7 火柴盒版：移除 onPlayerDeathByAi 通知（已废弃）
+        // 故事模式阶段推进完全由 StoryManager.tickChapter 周期任务驱动，不响应 AI 击杀玩家事件
     }
 
     /**

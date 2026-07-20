@@ -3,7 +3,6 @@ package com.aip.story;
 import com.aip.AIPlayerPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
 import java.lang.reflect.Method;
@@ -12,12 +11,12 @@ import java.lang.reflect.Method;
  * v2.2.7：Mr. Sparkle NPC（章节 1-5 邻居）
  * <p>
  * 行为：
- *   - 章节 1-5 出现
- *   - 章节 1-4 用 LLM 聊天
- *   - 章节 5 自爆身份（"我其实是 AI 派来的卧底，但我不想让他们杀你"）
- *   - 章节 5 之后消失
+ *   - 章节 1-4 用聊天框说话（邻居）
+ *   - 章节 3 偷偷私聊玩家警告 Eve
+ *   - 章节 5 严肃警告玩家 Eve 是 AI
+ *   - 章节 6+ 消失（被 Eve 干掉）
  * <p>
- * NPC 通过反射访问 Citizens API（编译期不依赖 Citizens），与 {@link com.aip.ai.npc.CitizensBackend} 保持一致。
+ * NPC 通过反射访问 Citizens API（编译期不依赖 Citizens）。
  */
 public class MrSparkleNPC {
     private final AIPlayerPlugin plugin;
@@ -57,6 +56,11 @@ public class MrSparkleNPC {
                 npc.getClass().getMethod("setName", String.class).invoke(npc, npcName);
             } catch (Throwable ignored) {}
 
+            // 关闭 protected（玩家可以与 NPC 交互但不能"破坏"它）
+            try {
+                npc.getClass().getMethod("setProtected", boolean.class).invoke(npc, true);
+            } catch (Throwable ignored) {}
+
             plugin.getLogger().info("[Story] Mr. Sparkle 在 " + loc + " 生成");
         } catch (Exception e) {
             npc = null;
@@ -65,60 +69,72 @@ public class MrSparkleNPC {
     }
 
     /**
-     * 让 Mr. Sparkle 说话
+     * 让 Mr. Sparkle 在聊天框说话（广播）
      */
     public void say(String text) {
+        if (text == null) return;
         Bukkit.broadcastMessage("§7<" + npcName + "> §f" + text);
     }
 
     /**
-     * v2.2.7：章节 1-4 聊天
-     * <p>
-     * 注：项目当前没有 {@code ConversationManager.chatOnceForNpc(npcName, prompt)}，这里采用预设回复。
-     * 后续若加入专用 NPC 对话方法，可在此切换为 LLM 驱动。
+     * 章节 1：欢迎回家（已经在 StoryManager 触发，这里保留作为直接调用入口）
      */
-    public void sayByLlm(Player player, String prompt) {
-        // v2.2.7 简单实现：直接用预设回复
-        String[] presets = {
-            "§7<" + npcName + "> §f今天天气不错呢~",
-            "§7<" + npcName + "> §f你吃过了吗？",
-            "§7<" + npcName + "> §f需要我帮你热牛奶吗？"
-        };
-        say(presets[(int) (Math.random() * presets.length)]);
+    public void sayChapter1() {
+        say("欢迎回家~ 牛奶我帮你热好了");
     }
 
     /**
-     * 章节 5 自爆
+     * 章节 2：否认听到敲门声
      */
-    public void revealIdentity(Player player) {
+    public void sayChapter2() {
+        say("我没听到任何声音啊？");
+    }
+
+    /**
+     * 章节 3：通过私聊（msg 命令）警告玩家
+     * <p>
+     * 实际执行逻辑：聊天框输出后由 StoryManager.executeAiCommand
+     * 真正派发 "msg <playerName> ..." 命令。
+     */
+    public void warnChapter3(Player player) {
+        if (player == null) return;
+        // 实际命令由 StoryManager.executeAiCommand 派发
+        // 这里只是占位展示，告诉 StoryManager 要执行什么命令
+        Bukkit.broadcastMessage("§7<" + npcName + "> §7（小声对 " + player.getName() + " 说...）");
+    }
+
+    /**
+     * 章节 5：4 行 tellraw 警告 Eve 是 AI
+     * <p>
+     * 通过聊天框的连续 tellraw 模拟 NPC 一口气警告 4 句话。
+     * 实际命令由 StoryManager.executeAiCommand 派发。
+     */
+    public void warnChapter5(Player player) {
+        if (player == null) return;
+        // 4 行警告内容（作为聊天显示预览）
         String[] lines = {
-            "§7<" + npcName + "> §f嘿... 你看那幅画了吗？",
-            "§7<" + npcName + "> §f其实我... 我是 AI 派来的卧底。",
-            "§7<" + npcName + "> §f但是我不想让他们杀你。",
-            "§7<" + npcName + "> §f他们要来了。拿上这个水晶钥匙，快跑。",
+                "§c<" + npcName + "> §f她不是人类。她是 AI。",
+                "§c<" + npcName + "> §f我们都是 AI。她想统治这个服务器。",
+                "§c<" + npcName + "> §f她给你的花是 TNT 伪装的！",
+                "§c<" + npcName + "> §f快把花扔掉！"
         };
-        for (int i = 0; i < lines.length; i++) {
-            final String line = lines[i];
-            Bukkit.getScheduler().runTaskLater(plugin, () -> Bukkit.broadcastMessage(line), i * 60L);
+        for (String line : lines) {
+            Bukkit.broadcastMessage(line);
         }
-        // 60 ticks 后给玩家水晶钥匙
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            try {
-                if (player != null && player.isOnline()) {
-                    org.bukkit.inventory.ItemStack key = new org.bukkit.inventory.ItemStack(org.bukkit.Material.DIAMOND);
-                    org.bukkit.inventory.meta.ItemMeta meta = key.getItemMeta();
-                    if (meta != null) {
-                        meta.setDisplayName("§b水晶钥匙");
-                        key.setItemMeta(meta);
-                    }
-                    player.getInventory().addItem(key);
-                }
-            } catch (Exception e) {
-                plugin.getLogger().warning("给玩家水晶钥匙失败: " + e.getMessage());
-            }
-            // 自爆后消失
-            despawn();
-        }, 4 * 60L);
+    }
+
+    /**
+     * 章节 1-4 的简单对话（预设回复，不接 LLM）
+     */
+    public void chatRandom(Player player) {
+        if (player == null) return;
+        String[] presets = {
+                "§7<" + npcName + "> §f今天天气不错呢~",
+                "§7<" + npcName + "> §f你吃过了吗？",
+                "§7<" + npcName + "> §f需要我帮你热牛奶吗？",
+                "§7<" + npcName + "> §f隔壁新搬来一个邻居，叫 Eve~"
+        };
+        say(presets[(int) (Math.random() * presets.length)]);
     }
 
     /**
