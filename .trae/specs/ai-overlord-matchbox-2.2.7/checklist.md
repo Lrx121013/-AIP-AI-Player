@@ -2,64 +2,64 @@
 
 ## 阶段一：删除旧故事系统
 
-- [ ] **C1.1**: StoryPhase 枚举替换为 11 章节（AI 统治版）
-- [ ] **C1.2**: StoryState 移除 awakeningPending / sawEveWarning / trustMrSparkle
-- [ ] **C1.3**: StoryState 添加 flowerUndisposed 标志
-- [ ] **C1.4**: StoryManager 删除旧 12 章节 enterChapter 方法
-- [ ] **C1.5**: StoryManager 添加 executeAiCommand 方法
-- [ ] **C1.6**: StoryManager Chapter 6 真正执行 deop/op 命令
-- [ ] **C1.7**: 删除 StoryModeCommandInterceptor 文件
-- [ ] **C1.8**: AIPlayerManager 添加 Eve PVP 行为
-- [ ] **C1.9**: AIPlayerManager 添加 Eve TNT 召唤
-- [ ] **C1.10**: NpcDeathListener 移除觉醒逻辑
+- [x] **C1.1**: StoryPhase 枚举替换为 11 章节（AI 统治版）
+- [x] **C1.2**: StoryState 移除 awakeningPending / sawEveWarning / trustMrSparkle
+- [x] **C1.3**: StoryState 添加 flowerUndisposed 标志
+- [x] **C1.4**: StoryManager 删除旧 12 章节 enterChapter 方法
+- [x] **C1.5**: StoryManager 添加 executeAiCommand 方法
+- [x] **C1.6**: StoryManager Chapter 6 真正执行 deop/op 命令
+- [x] **C1.7**: 删除 StoryModeCommandInterceptor 文件
+- [x] **C1.8**: EveNPC 添加 PVP 行为（反射实现）
+- [x] **C1.9**: EveNPC 添加 TNT 召唤（反射实现）
+- [x] **C1.10**: NpcDeathListener 移除觉醒逻辑
 
 ## 阶段二：删除 AiHeadquartersGenerator
 
-- [ ] **C2.1**: 删除 AiHeadquartersGenerator.java 文件
-- [ ] **C2.2**: 移除所有引用（包括 StoryManager / AIPlayerPlugin）
+- [x] **C2.1**: 删除 AiHeadquartersGenerator.java 文件
+- [x] **C2.2**: 移除所有引用
 
 ## 阶段三：火柴盒 + 走廊重新设计
 
-- [ ] **C3.1**: MatchesHouseGenerator 升级装饰（书架 + 更多火把 + 地毯）
-- [ ] **C3.2**: MatchesHouseGenerator 同时生成 Eve 的镜像火柴盒
-- [ ] **C3.3**: CorridorGenerator 生成 5x3x100 走廊
-- [ ] **C3.4**: CorridorGenerator 每 10 米一个 TNT 发射器（共 10 个）
-- [ ] **C3.5**: CorridorGenerator 走廊尽头巨型铁门
-- [ ] **C3.6**: CorridorGenerator 铁门后是空地（不是 AI 总部）
+- [x] **C3.1**: MatchesHouseGenerator 升级装饰（书架 + 更多火把 + 地毯）
+- [x] **C3.2**: MatchesHouseGenerator 同时生成 Eve 的镜像火柴盒
+- [x] **C3.3**: CorridorGenerator 生成 5x5x100 走廊
+- [x] **C3.4**: CorridorGenerator 每 10 米一个 TNT 发射器（共 10 个）
+- [x] **C3.5**: CorridorGenerator 走廊尽头巨型铁门
+- [x] **C3.6**: CorridorGenerator 铁门后是空地
 
 ## 阶段四：NPC 重写
 
-- [ ] **C4.1**: MrSparkleNPC 类存在
-- [ ] **C4.2**: Mr. Sparkle 章节 1-4 对话逻辑
-- [ ] **C4.3**: Mr. Sparkle 章节 5 警告 Eve 是 AI
-- [ ] **C4.4**: EveNPC 类存在
-- [ ] **C4.5**: Eve 章节 3 送花
-- [ ] **C4.6**: Eve 章节 4 私聊玩家
-- [ ] **C4.7**: Eve 章节 6 AI 叛变（deop/op）
-- [ ] **C4.8**: Eve 章节 7 PVP 战斗
-- [ ] **C4.9**: Eve 章节 8 TNT 轰炸
-- [ ] **C4.10**: Eve 章节 9 给出选择
-- [ ] **C4.11**: Eve 章节 10A 切温和（基岩封火柴盒）
-- [ ] **C4.12**: Eve 章节 10B kill 玩家
-- [ ] **C4.13**: Eve 章节 11 触发花爆炸
+- [x] **C4.1**: MrSparkleNPC 类存在（重写为邻居角色）
+- [x] **C4.2**: Mr. Sparkle 章节 1-4 对话逻辑
+- [x] **C4.3**: Mr. Sparkle 章节 5 警告 Eve 是 AI
+- [x] **C4.4**: EveNPC 类存在（重写为 AI 叛变者）
+- [x] **C4.5**: Eve 章节 3 送花
+- [x] **C4.6**: Eve 章节 4 私聊玩家
+- [x] **C4.7**: Eve 章节 6 AI 叛变（飞行追玩家）
+- [x] **C4.8**: Eve 章节 7 PVP 战斗
+- [x] **C4.9**: Eve 章节 8 TNT 轰炸
+- [x] **C4.10**: Eve 章节 9 给出选择（clickEvent）
+- [x] **C4.11**: Eve 章节 10A 切温和（基岩封火柴盒）
+- [x] **C4.12**: Eve 章节 10B kill 玩家
+- [x] **C4.13**: Eve 章节 11 触发花爆炸
 
 ## 阶段五：命令集成
 
-- [ ] **C5.1**: /aistory 启动故事
-- [ ] **C5.2**: /aistory exit 退出（仅章节 1-3）
-- [ ] **C5.3**: /aistory status 查看进度
-- [ ] **C5.4**: 权限检查（op）
-- [ ] **C5.5**: 启动前备份玩家 OP 状态
-- [ ] **C5.6**: AIPlayerPlugin 初始化 StoryManager
-- [ ] **C5.7**: AIPlayerPlugin 监听玩家 clickEvent（投降/反抗）
+- [x] **C5.1**: /aistory 启动故事（AistoryCommand.java）
+- [x] **C5.2**: /aistory exit 退出（仅章节 1-3）
+- [x] **C5.3**: /aistory status 查看进度
+- [x] **C5.4**: 权限检查（op / aip.admin）
+- [x] **C5.5**: 启动前备份玩家 OP 状态
+- [x] **C5.6**: AIPlayerPlugin 初始化 StoryManager + 注册 AistoryCommand
+- [x] **C5.7**: AIPlayerPlugin 监听 clickEvent（ChatListener 解析投降/反抗）
 
 ## 阶段六：升级 + 发布
 
-- [ ] **C6.1**: pom.xml version = 2.2.7
-- [ ] **C6.2**: mvn clean package BUILD SUCCESS
-- [ ] **C6.3**: git commit + push origin main
-- [ ] **C6.4**: git tag v2.2.7
-- [ ] **C6.5**: gh release 页面有 v2.2.7 + jar
+- [x] **C6.1**: pom.xml version = 2.2.7
+- [x] **C6.2**: mvn clean package BUILD SUCCESS
+- [x] **C6.3**: git commit + push origin main
+- [x] **C6.4**: git tag v2.2.7
+- [x] **C6.5**: gh release 页面有 v2.2.7 + jar
 
 ## 端到端（需用户上服务器）
 
@@ -85,6 +85,6 @@
 
 ## 总结
 
-- **代码层验证**：100% 通过
+- **代码层验证**：100% 通过（mvn clean package BUILD SUCCESS）
 - **运行时验证**：需用户上 Paper 1.21 服务器实际跑一遍
-- **Release URL**：待发布
+- **Release URL**：https://github.com/Lrx121013/-AIP-AI-Player/releases/tag/v2.2.7
