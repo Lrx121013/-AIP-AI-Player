@@ -47,7 +47,7 @@ public class StoryManager {
         if (initialized) return;
         initialized = true;
 
-        int aerialInterval = plugin.getConfigManager().getAerialTickMs() / 50;  // ms → tick
+        long aerialInterval = plugin.getConfigManager().getAerialTickMs() / 50;  // ms → tick
         if (aerialInterval < 1) aerialInterval = 80;  // 默认 4 秒
 
         aerialTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickAerialAssault, aerialInterval, aerialInterval);

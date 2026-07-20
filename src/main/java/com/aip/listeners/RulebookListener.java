@@ -35,11 +35,15 @@ public class RulebookListener implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBookEdit(PlayerEditBookEvent event) {
-        ItemStack book = event.getBook();
-        if (book == null || book.getType() != Material.WRITTEN_BOOK) return;
-        if (!isAiRulebook(book)) return;
-
         Player reader = event.getPlayer();
+        ItemStack hand = reader.getInventory().getItemInMainHand();
+        if (hand.getType() != Material.WRITTEN_BOOK) {
+            ItemStack off = reader.getInventory().getItemInOffHand();
+            if (off.getType() != Material.WRITTEN_BOOK) return;
+            hand = off;
+        }
+        if (!isAiRulebook(hand)) return;
+
         AIPlayer ai = findAiByRulebook();
         if (ai == null) return;
 

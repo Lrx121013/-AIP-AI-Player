@@ -1584,7 +1584,7 @@ public class CommandExecutor {
                     t.setType(Material.AIR);
                     world.spawnEntity(new Location(world,
                             tloc.getBlockX() + 0.5, tloc.getBlockY() + 8, tloc.getBlockZ() + 0.5),
-                            org.bukkit.entity.EntityType.PRIMED_TNT);
+                            org.bukkit.entity.EntityType.TNT);
                 }
             } catch (Exception ignored) {}
         }, 10L);
