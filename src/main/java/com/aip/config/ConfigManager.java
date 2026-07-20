@@ -36,6 +36,15 @@ public class ConfigManager {
     private double frequencyPenalty;
     // v2.2.2：复读机强化——独立的存在惩罚（presence_penalty）
     private double presencePenalty;
+    // v2.2.4：推理模型支持
+    /** 是否启用推理模式（启用时，模型可输出 reasoning_content） */
+    private boolean reasoningEnabled;
+    /** 是否把推理内容流式输出到玩家聊天框（false 时静默处理，仅记录） */
+    private boolean reasoningStreamToChat;
+    /** 推理内容前缀（带颜色） */
+    private String reasoningPrefix;
+    /** 推理内容颜色（每字符染色） */
+    private String reasoningColor;
     private int idleMonologueMinSeconds;
     private int idleMonologueMaxSeconds;
     private boolean enableThreatTaunts;
@@ -82,6 +91,11 @@ public class ConfigManager {
         // v2.2.2 复读机强化
         this.frequencyPenalty = cfg.getDouble("llm.frequency-penalty", 0.7);
         this.presencePenalty = cfg.getDouble("llm.presence-penalty", 0.8);
+        // v2.2.4：推理模型支持
+        this.reasoningEnabled = cfg.getBoolean("llm.reasoning.enabled", false);
+        this.reasoningStreamToChat = cfg.getBoolean("llm.reasoning.stream-to-chat", true);
+        this.reasoningPrefix = cfg.getString("llm.reasoning.prefix", "§8[思考] §7");
+        this.reasoningColor = cfg.getString("llm.reasoning.color", "§7");
         this.idleMonologueMinSeconds = cfg.getInt("idle-monologue-min-seconds", 10);
         this.idleMonologueMaxSeconds = cfg.getInt("idle-monologue-max-seconds", 20);
         this.enableThreatTaunts = cfg.getBoolean("enable-threat-taunts", true);
@@ -213,6 +227,26 @@ public class ConfigManager {
     /** v2.2.2：LLM 存在惩罚（-2.0~2.0），抑制主题重复。默认 0.8 */
     public double getPresencePenalty() {
         return presencePenalty;
+    }
+
+    /** v2.2.4：是否启用推理模式（启用时模型可输出 reasoning_content） */
+    public boolean isReasoningEnabled() {
+        return reasoningEnabled;
+    }
+
+    /** v2.2.4：是否把推理内容流式输出到玩家聊天框 */
+    public boolean isReasoningStreamToChat() {
+        return reasoningStreamToChat;
+    }
+
+    /** v2.2.4：推理内容前缀（带颜色代码） */
+    public String getReasoningPrefix() {
+        return reasoningPrefix;
+    }
+
+    /** v2.2.4：推理内容颜色（每字符染色） */
+    public String getReasoningColor() {
+        return reasoningColor;
     }
 
     /** 自言自语最小间隔（秒） */

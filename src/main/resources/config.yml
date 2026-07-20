@@ -215,8 +215,14 @@ debug: false
 # ============================================================
 llm:
   temperature: 0.9   # LLM 温度，0.0=完全确定 1.0=平衡 2.0=非常随机
-  frequency-penalty: 0.7  # v2.2.2 复读机强化：频率惩罚 0.5→0.7，更强抑制重复
-  presence-penalty: 0.8   # v2.2.2 复读机强化：存在惩罚 0.5→0.8，更强抑制主题重复
+  frequency-penalty: 0.7  # v2.2.2 复读机修复：频率/存在惩罚（-2.0~2.0），越大越抑制重复
+  presence-penalty: 0.8
+  # v2.2.4：推理模型支持（如 DeepSeek-R1、agnes-2.0-flash、QwQ 等带思考的模型）
+  reasoning:
+    enabled: false           # 是否启用推理模式（true=允许模型自然思考并输出 reasoning_content；false=硬禁思考提速）
+    stream-to-chat: true     # 思考内容是否流式输出到玩家聊天框（让玩家看到 AI 在"想"）
+    prefix: '§8[思考] §7'   # 思考内容前缀（带颜色代码）
+    color: '§7'              # 思考内容每字颜色（§7=灰色）
 idle-monologue-min-seconds: 10
 idle-monologue-max-seconds: 20
 enable-threat-taunts: true
