@@ -2,13 +2,13 @@
 
 ## 阶段一：数据结构与管理器
 
-- [ ] Task 1: 创建 ReflexRule 数据类
+- [x] Task 1: 创建 ReflexRule 数据类
   - [ ] SubTask 1.1: 新建 `src/main/java/com/aip/ai/ReflexRule.java`
   - [ ] SubTask 1.2: 字段：`id / triggerType(枚举) / condition / action / cooldownMs / enabled / lastTriggered`
   - [ ] SubTask 1.3: 内部枚举 `TriggerType`：PLAYER_NEARBY / MOB_NEARBY / LOW_HEALTH / LOW_FOOD / ON_DAMAGE / PLAYER_ATTACK / BLOCK_BREAK_NEARBY / TIME_PERIOD
   - [ ] SubTask 1.4: 提供 `canTrigger(long now)` 方法：`enabled && (now - lastTriggered >= cooldownMs)`
 
-- [ ] Task 2: 创建 ReflexManager 管理类
+- [x] Task 2: 创建 ReflexManager 管理类
   - [ ] SubTask 2.1: 新建 `src/main/java/com/aip/ai/ReflexManager.java`
   - [ ] SubTask 2.2: 字段：`AIPlayer owner / Map<String, ReflexRule> rules / BukkitTask checkTask / int maxRules / int minCooldownMs`
   - [ ] 2.3: `addRule(trigger, condition, action, cooldownMs)` —— 生成 ID（r1/r2/...），cooldown 取 max(用户值, minCooldownMs)，规则数超限抛异常
@@ -22,19 +22,19 @@
 
 ## 阶段二：集成到 AIPlayer 与生命周期
 
-- [ ] Task 3: AIPlayer 集成 ReflexManager
+- [x] Task 3: AIPlayer 集成 ReflexManager
   - [ ] SubTask 3.1: `AIPlayer` 新增 `private ReflexManager reflexManager;` 字段（非 final）
   - [ ] SubTask 3.2: 构造器末尾 `this.reflexManager = new ReflexManager(plugin, this);`
   - [ ] SubTask 3.3: 提供 `getReflexManager()` getter
 
-- [ ] Task 4: AIPlayerManager 生命周期集成
+- [x] Task 4: AIPlayerManager 生命周期集成
   - [ ] SubTask 4.1: `spawn` / `spawnAt` / `revive` 完成实体创建后调 `aiPlayer.getReflexManager().startCheckTask()`
   - [ ] SubTask 4.2: `remove` 末尾调 `p.getReflexManager().cancel()`（在 cancelAllPursuits 附近）
   - [ ] SubTask 4.3: `revive` 时**不**保留旧规则（清空避免脏状态）—— cancel 已清空，revive 后重新 startCheckTask 即可
 
 ## 阶段三：命令实现
 
-- [ ] Task 5: CommandExecutor 实现 5 个 reflex 命令
+- [x] Task 5: CommandExecutor 实现 5 个 reflex 命令
   - [ ] SubTask 5.1: `handleReflexAdd(aiPlayer, args)` —— 参数：trigger condition action...，调 reflexManager.addRule，返回 ID 存入 lastQueryResult
   - [ ] SubTask 5.2: `handleReflexList(aiPlayer)` —— 调 reflexManager.listRules() 存入 lastQueryResult
   - [ ] SubTask 5.3: `handleReflexRemove(aiPlayer, args)` —— 参数：id，调 removeRule
@@ -46,7 +46,7 @@
 
 ## 阶段四：事件监听器
 
-- [ ] Task 6: 创建 ReflexListener
+- [x] Task 6: 创建 ReflexListener
   - [ ] SubTask 6.1: 新建 `src/main/java/com/aip/listeners/ReflexListener.java`
   - [ ] SubTask 6.2: 监听 `EntityDamageByEntityEvent`，若 entity 是 AI 玩家：
     - 延迟 1 tick 调度（确保主线程）
@@ -58,12 +58,12 @@
 
 ## 阶段五：Prompt 注入与配置
 
-- [ ] Task 7: ConversationManager 注入规则摘要
+- [x] Task 7: ConversationManager 注入规则摘要
   - [ ] SubTask 7.1: `chat` 方法构建 system prompt 时，调 `aiPlayer.getReflexManager().getPromptSummary()`
   - [ ] SubTask 7.2: 摘要非空则追加 "你当前已定义的反射规则（自动执行，无需再思考）：" 段落
   - [ ] SubTask 7.3: 摘要为空则跳过
 
-- [ ] Task 8: 配置项与 ConfigManager
+- [x] Task 8: 配置项与 ConfigManager
   - [ ] SubTask 8.1: `config.yml` 新增 `ai.max-reflex-rules: 8`
   - [ ] SubTask 8.2: `config.yml` 新增 `ai.reflex-min-cooldown-ms: 1000`
   - [ ] SubTask 8.3: `config.yml` 新增 `ai.reflex-check-interval: 20`
@@ -72,7 +72,7 @@
 
 ## 阶段六：玩家可见查询命令
 
-- [ ] Task 9: AIPCommand 新增 reflex list 子命令
+- [x] Task 9: AIPCommand 新增 reflex list 子命令
   - [ ] SubTask 9.1: `AIPCommand.onCommand` 新增 `reflex` case，仅支持 `list <ai>` 子命令
   - [ ] SubTask 9.2: 输出格式："AI xxx 的反射规则：\n- [r1] PLAYER_NEARBY 5 → attack nearest (冷却2秒, 启用)"
   - [ ] SubTask 9.3: `onTabComplete` 补全 `reflex` → `list` → 在线 AI 名字
@@ -80,7 +80,7 @@
 
 ## 阶段七：构建与发布
 
-- [ ] Task 10: 版本号升级与发布
+- [x] Task 10: 版本号升级与发布
   - [ ] SubTask 10.1: pom.xml version 1.6.0 → 1.7.0
   - [ ] SubTask 10.2: MODRINTH.md 添加 v1.7.0 更新日志
   - [ ] SubTask 10.3: `mvn clean package -DskipTests` 编译通过
