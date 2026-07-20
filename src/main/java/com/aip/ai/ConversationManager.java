@@ -83,9 +83,28 @@ public class ConversationManager {
         // P5：注入主线任务摘要，让 AI 知道当前阶段和进度
         String questSummary = aiPlayer.getMainQuest() != null
                 ? aiPlayer.getMainQuest().getPromptSummary()
-                : "";
-        if (!questSummary.isEmpty()) {
+                : null;
+        if (questSummary != null && !questSummary.isEmpty()) {
             systemPromptBuilder.append("\n").append(questSummary);
+        }
+        // v2.1.3 故事模式：注入当前阶段摘要
+        com.aip.story.StoryState storyState = aiPlayer.getStoryState();
+        if (storyState != null
+                && storyState.getCurrentPhase() != com.aip.story.StoryPhase.DORMANT
+                && storyState.getCurrentPhase() != com.aip.story.StoryPhase.COMPLETED) {
+            com.aip.story.StoryPhase phase = storyState.getCurrentPhase();
+            com.aip.story.StoryPhase next = phase.getNext();
+            systemPromptBuilder.append("\n\n### 【故事模式】\n")
+                    .append("当前阶段：").append(phase.getDisplayName())
+                    .append("（阶段 ").append(phase.getIndex()).append("/7）\n")
+                    .append("剧情：").append(phase.getDescription()).append("\n");
+            if (next != null && next != com.aip.story.StoryPhase.COMPLETED) {
+                systemPromptBuilder.append("下一阶段：").append(next.getDisplayName())
+                        .append(" —— ").append(next.getDescription()).append("\n");
+            } else {
+                systemPromptBuilder.append("下一阶段：故事完结。\n");
+            }
+            systemPromptBuilder.append("在对话和行动中体现你的角色感和剧情进度，但不要重复输出 [COMMAND:...] 等指令模板。");
         }
         messages.add(makeMessage("system", systemPromptBuilder.toString()));
 

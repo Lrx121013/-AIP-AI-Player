@@ -79,6 +79,10 @@ public class AIPlayer {
     private ConversationManager conversationManager;
     /** 主线任务执行器（spawn/revive 时由 AIPlayerManager 创建并设置，remove 时 cancel） */
     private MainQuestExecutor mainQuestExecutor;
+    /** v2.1.3 故事模式状态（可为 null，未启用或非邪恶 AI 时） */
+    private com.aip.story.StoryState storyState;
+    /** 上次跳跃时间戳（ms），用于跳跃 cooldown 防止蹦蹦跳跳 */
+    private long lastJumpTime;
 
     public AIPlayer(AIPlayerPlugin plugin, String name, UUID entityId) {
         this.plugin = plugin;
@@ -199,6 +203,17 @@ public class AIPlayer {
     public void setMainQuestExecutor(MainQuestExecutor mainQuestExecutor) {
         this.mainQuestExecutor = mainQuestExecutor;
     }
+
+    /** v2.1.3 故事模式状态 */
+    public com.aip.story.StoryState getStoryState() { return storyState; }
+    public void setStoryState(com.aip.story.StoryState storyState) { this.storyState = storyState; }
+
+    /** 上次跳跃时间戳（ms） */
+    public long getLastJumpTime() { return lastJumpTime; }
+    public void setLastJumpTime(long lastJumpTime) { this.lastJumpTime = lastJumpTime; }
+
+    /** 获取 AIPlayerPlugin 引用（供 StageAction 等辅助类使用） */
+    public AIPlayerPlugin getPlugin() { return plugin; }
 
     public Player getEntity() {
         org.bukkit.entity.Entity ent = Bukkit.getEntity(entityId);
@@ -324,16 +339,30 @@ public class AIPlayer {
                     return;
                 }
                 // 优先用后端寻路
+                final AIPlayer self = AIPlayer.this;
                 boolean navigated = NpcHelper.navigateTo(v, targetLoc,
                         plugin.getConfigManager().getMoveSpeed());
                 if (!navigated) {
                     // 回退：分帧 teleport
-                    Location dir = targetLoc.clone().subtract(myLoc).toVector().normalize()
-                            .multiply(plugin.getConfigManager().getMoveSpeed())
-                            .toLocation(myLoc.getWorld());
-                    Location next = myLoc.clone().add(dir);
-                    next.setY(targetLoc.getY());
-                    v.teleport(next);
+                    // v2.1.3 修复：仅在 Y 差 ≤ 3 时回退 teleport，且 Y 保持 myLoc.getY()
+                    // 防止"追随玩家时直接传送到玩家高度"的 bug
+                    double yDiff = Math.abs(targetLoc.getY() - myLoc.getY());
+                    if (yDiff <= 3.0) {
+                        Location dir = targetLoc.clone().subtract(myLoc).toVector().normalize()
+                                .multiply(plugin.getConfigManager().getMoveSpeed())
+                                .toLocation(myLoc.getWorld());
+                        Location next = myLoc.clone().add(dir);
+                        // v2.1.3 关键修复：Y 轴用 myLoc.getY() 而非 targetLoc.getY()
+                        next.setY(myLoc.getY());
+                        v.teleport(next);
+                    } else {
+                        // Y 差太大，跳着追（向上跳一格），下一 tick 继续寻路
+                        long now = System.currentTimeMillis();
+                        if (now - self.getLastJumpTime() >= 1500L) {
+                            NpcHelper.setAiVelocity(v, new org.bukkit.util.Vector(0, 0.4, 0));
+                            self.setLastJumpTime(now);
+                        }
+                    }
                 }
             }
         }.runTaskTimer(plugin, 0L, 10L);

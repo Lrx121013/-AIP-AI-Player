@@ -52,6 +52,9 @@ public class AIPlayerPlugin extends JavaPlugin {
     // ===== P4 新增管理器 =====
     private ApprovalManager approvalManager;
 
+    // ===== v2.1.3 故事模式管理器 =====
+    private com.aip.story.StoryManager storyManager;
+
     @Override
     public void onEnable() {
         instance = this;
@@ -93,6 +96,10 @@ public class AIPlayerPlugin extends JavaPlugin {
         this.playerProfileManager = new PlayerProfileManager();
         this.strategyEngine = new StrategyEngine(this);
 
+        // v2.1.3 故事模式（邪恶AI）管理器
+        this.storyManager = new com.aip.story.StoryManager(this);
+        this.storyManager.init();
+
         // 4. 注册命令
         AIPCommand aipCommand = new AIPCommand(this);
         if (getCommand("aip") != null) {
@@ -116,6 +123,9 @@ public class AIPlayerPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new NpcKillListener(this), this);
         // 反射规则监听器：监听伤害 / 玩家攻击 / 方块破坏等事件型触发器
         getServer().getPluginManager().registerEvents(new ReflexListener(this), this);
+        // v2.1.3 故事模式监听器
+        getServer().getPluginManager().registerEvents(new com.aip.listeners.AiDeathListener(this), this);
+        getServer().getPluginManager().registerEvents(new com.aip.listeners.RulebookListener(this), this);
         if (guiManager != null) {
             getServer().getPluginManager().registerEvents(new GuiListener(this), this);
         } else {
@@ -236,5 +246,10 @@ public class AIPlayerPlugin extends JavaPlugin {
     /** P4：审批管理器 */
     public ApprovalManager getApprovalManager() {
         return approvalManager;
+    }
+
+    /** v2.1.3 故事模式管理器 */
+    public com.aip.story.StoryManager getStoryManager() {
+        return storyManager;
     }
 }

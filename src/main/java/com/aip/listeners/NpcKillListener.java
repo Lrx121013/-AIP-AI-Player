@@ -70,6 +70,16 @@ public class NpcKillListener implements Listener {
         }
 
         plugin.getLogger().info("AI " + ai.getName() + " 杀死了玩家 " + victimName);
+
+        // v2.1.3 故事模式：通知 StoryManager 推进阶段
+        try {
+            com.aip.story.StoryManager sm = plugin.getStoryManager();
+            if (sm != null) {
+                sm.onPlayerDeathByAi(ai, deadPlayer);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("NpcKillListener 通知 StoryManager 失败: " + e.getMessage());
+        }
     }
 
     /**

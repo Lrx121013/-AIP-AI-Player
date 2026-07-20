@@ -64,7 +64,8 @@ public class AIPlayerManager {
         aiPlayers.put(name.toLowerCase(), aiPlayer);
 
         // P2：反派模式开启时，新生成的 AI 也强制 VILLAIN 人格
-        if (plugin.getConfigManager().isVillainMode()) {
+        // v2.1.3：故事模式开启时，同样强制 VILLAIN 人格（替代 villain-mode）
+        if (plugin.getConfigManager().isStoryMode() || plugin.getConfigManager().isVillainMode()) {
             aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
             aiPlayer.setPersonality(Personality.VILLAIN);
         }
@@ -75,7 +76,22 @@ public class AIPlayerManager {
         spawner.sendMessage("§a已生成 AI 玩家: §e" + name + " §7(后端: " + NpcHelper.backendName() + ")");
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
-        bindMainQuest(aiPlayer);
+        // v2.1.3：注册故事模式状态
+        try {
+            if (plugin.getStoryManager() != null) {
+                plugin.getStoryManager().registerStory(aiPlayer);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("StoryManager.registerStory 失败: " + e.getMessage());
+        }
+        // v2.1.3：邪恶 AI 改走 StoryManager 流程，不再启动 MainQuestExecutor
+        if (plugin.getConfigManager().isStoryMode()
+                && plugin.getStoryManager() != null
+                && plugin.getStoryManager().isStoryEligible(aiPlayer)) {
+            // 不调用 bindMainQuest，邪恶 AI 走故事模式
+        } else {
+            bindMainQuest(aiPlayer);
+        }
         scheduleIntroLine(aiPlayer);
         return aiPlayer;
     }
@@ -101,7 +117,8 @@ public class AIPlayerManager {
         aiPlayers.put(name.toLowerCase(), aiPlayer);
 
         // P2：反派模式开启时，新生成的 AI 也强制 VILLAIN 人格
-        if (plugin.getConfigManager().isVillainMode()) {
+        // v2.1.3：故事模式开启时，同样强制 VILLAIN 人格（替代 villain-mode）
+        if (plugin.getConfigManager().isStoryMode() || plugin.getConfigManager().isVillainMode()) {
             aiPlayer.setOriginalPersonality(aiPlayer.getPersonality());
             aiPlayer.setPersonality(Personality.VILLAIN);
         }
@@ -109,7 +126,22 @@ public class AIPlayerManager {
         aiPlayer.getReflexManager().startCheckTask();
         // 清理 GameDataCollector 旧缓存，避免拿到旧实体的数据
         plugin.getGameDataCollector().invalidateCache(actualUuid);
-        bindMainQuest(aiPlayer);
+        // v2.1.3：注册故事模式状态
+        try {
+            if (plugin.getStoryManager() != null) {
+                plugin.getStoryManager().registerStory(aiPlayer);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("StoryManager.registerStory 失败: " + e.getMessage());
+        }
+        // v2.1.3：邪恶 AI 改走 StoryManager 流程
+        if (plugin.getConfigManager().isStoryMode()
+                && plugin.getStoryManager() != null
+                && plugin.getStoryManager().isStoryEligible(aiPlayer)) {
+            // 不调用 bindMainQuest
+        } else {
+            bindMainQuest(aiPlayer);
+        }
         scheduleIntroLine(aiPlayer);
         return aiPlayer;
     }
@@ -147,6 +179,14 @@ public class AIPlayerManager {
         if (p.getMainQuestExecutor() != null) {
             p.getMainQuestExecutor().cancel();
             p.setMainQuestExecutor(null);
+        }
+        // v2.1.3：注销故事模式状态
+        try {
+            if (plugin.getStoryManager() != null) {
+                plugin.getStoryManager().unregisterStory(p.getEntityId());
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("StoryManager.unregisterStory 失败: " + e.getMessage());
         }
         Player player = p.getEntity();
         if (player != null && player.isValid()) {
@@ -225,9 +265,24 @@ public class AIPlayerManager {
         }
         // 清理旧 mainQuest 引用
         p.setMainQuest(null);
+        // v2.1.3：重置故事模式状态（重新开始故事）
+        try {
+            if (plugin.getStoryManager() != null) {
+                plugin.getStoryManager().unregisterStory(p.getEntityId());
+                plugin.getStoryManager().registerStory(p);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("StoryManager 重置失败: " + e.getMessage());
+        }
 
-        // 复活后重新绑定主线任务
-        bindMainQuest(p);
+        // 复活后重新绑定主线任务（仅非故事模式 AI）
+        if (plugin.getConfigManager().isStoryMode()
+                && plugin.getStoryManager() != null
+                && plugin.getStoryManager().isStoryEligible(p)) {
+            // 不调用 bindMainQuest
+        } else {
+            bindMainQuest(p);
+        }
         scheduleIntroLine(p);
         plugin.getLogger().info("AI " + name + " 复活成功");
         return p;

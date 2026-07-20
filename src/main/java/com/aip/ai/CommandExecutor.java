@@ -271,6 +271,13 @@ public class CommandExecutor {
                 case "kick" -> handleKick(entity, args);
                 case "tp_all" -> handleTpAll(entity, args);
                 case "gamemode_player" -> handleGamemodePlayer(entity, args);
+                // v2.1.3 故事模式阶段专属命令
+                case "force_survival_player" -> handleForceSurvivalPlayer(entity, args);
+                case "tnt_strike_burst" -> handleTntStrikeBurst(entity, args);
+                case "fly_bomb_player" -> handleFlyBombPlayer(entity, args);
+                case "equip_netherite_set" -> handleEquipNetheriteSet(entity);
+                case "give_rulebook" -> handleGiveRulebook(entity, args);
+                case "dictate_order" -> handleDictateOrder(entity, args);
                 default -> {
                     plugin.getLogger().warning("未知 AI 命令: " + cmd);
                     return new ExecutionResult(cmd, false, "未知命令");
@@ -1539,6 +1546,140 @@ public class CommandExecutor {
         String mode = args[1].toLowerCase();
         Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
                 "gamemode " + mode + " " + playerName);
+    }
+
+    // ===== v2.1.3 故事模式（邪恶AI）阶段专属命令 =====
+
+    /** force_survival_player <玩家名> —— 强制将指定玩家设为生存模式（用控制台身份执行） */
+    @AICommand(name = "force_survival_player", desc = "强制将玩家设为生存模式", args = "玩家名", op = true, category = "故事")
+    private void handleForceSurvivalPlayer(Player entity, String[] args) {
+        if (args.length < 1) {
+            throw new RuntimeException("用法：force_survival_player <玩家名>");
+        }
+        String playerName = args[0];
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "gamemode survival " + playerName);
+        entity.sendMessage("§a已将 §e" + playerName + " §a强制设为生存模式");
+    }
+
+    /** tnt_strike_burst <玩家名> —— 在玩家头顶 8 格生成 TNT（让 Minecraft 物理自然下落） */
+    @AICommand(name = "tnt_strike_burst", desc = "在玩家头顶生成 TNT 自然下落", args = "玩家名", op = true, category = "故事")
+    private void handleTntStrikeBurst(Player entity, String[] args) {
+        if (args.length < 1) {
+            throw new RuntimeException("用法：tnt_strike_burst <玩家名>");
+        }
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null || !target.isOnline()) {
+            throw new RuntimeException("玩家不在线：" + args[0]);
+        }
+        Location tloc = target.getLocation();
+        World world = target.getWorld();
+        // 在玩家头顶 8 格生成 TNT
+        Block tnt = world.getBlockAt(tloc.getBlockX(), tloc.getBlockY() + 8, tloc.getBlockZ());
+        tnt.setType(Material.TNT);
+        // 10 tick 后点燃
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            try {
+                org.bukkit.block.Block t = world.getBlockAt(tloc.getBlockX(), tloc.getBlockY() + 8, tloc.getBlockZ());
+                if (t.getType() == Material.TNT) {
+                    t.setType(Material.AIR);
+                    world.spawnEntity(new Location(world,
+                            tloc.getBlockX() + 0.5, tloc.getBlockY() + 8, tloc.getBlockZ() + 0.5),
+                            org.bukkit.entity.EntityType.PRIMED_TNT);
+                }
+            } catch (Exception ignored) {}
+        }, 10L);
+    }
+
+    /** fly_bomb_player <玩家名> —— 创造模式下朝玩家位置发射 TNT（带初速度 1.5），并保持飞行高度 */
+    @AICommand(name = "fly_bomb_player", desc = "朝玩家发射 TNT 飞行轰炸", args = "玩家名", op = true, category = "故事")
+    private void handleFlyBombPlayer(Player entity, String[] args) {
+        if (args.length < 1) {
+            throw new RuntimeException("用法：fly_bomb_player <玩家名>");
+        }
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null || !target.isOnline()) {
+            throw new RuntimeException("玩家不在线：" + args[0]);
+        }
+        // 先把自己抬到玩家头顶 8 格以上（飞行模式）
+        Location targetLoc = target.getLocation();
+        Location myLoc = entity.getLocation();
+        if (myLoc.getY() < targetLoc.getY() + 8) {
+            entity.teleport(new Location(myLoc.getWorld(), myLoc.getX(), targetLoc.getY() + 10, myLoc.getZ()));
+        }
+        // 生成 TNT 实体，方向指向玩家
+        org.bukkit.entity.TNTPrimed tnt = entity.getWorld().spawn(
+                entity.getLocation().add(0, 1, 0), org.bukkit.entity.TNTPrimed.class);
+        // 设定初速度指向玩家
+        Vector direction = targetLoc.toVector().subtract(tnt.getLocation().toVector()).normalize().multiply(1.5);
+        tnt.setVelocity(direction);
+        // 40 tick 后引爆
+        tnt.setFuseTicks(40);
+    }
+
+    /** equip_netherite_set —— 一次性装备全套顶级下界合金 + 盾牌 */
+    @AICommand(name = "equip_netherite_set", desc = "装备全套顶级下界合金", category = "故事")
+    private void handleEquipNetheriteSet(Player entity) {
+        EntityEquipment eq = entity.getEquipment();
+        if (eq == null) {
+            throw new RuntimeException("无法获取装备");
+        }
+        eq.setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
+        eq.setHelmet(new ItemStack(Material.NETHERITE_HELMET));
+        eq.setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+        eq.setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+        eq.setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+        eq.setItemInOffHand(new ItemStack(Material.SHIELD));
+        // 关闭无敌（确保 PVP 阶段能被打）
+        entity.setInvulnerable(false);
+        entity.sendMessage("§a已装备顶级下界合金套 + 盾牌");
+    }
+
+    /** give_rulebook <玩家名> —— 创建一个 written_book "AI 制度之书" 放入玩家物品栏 */
+    @AICommand(name = "give_rulebook", desc = "给予玩家一本 AI 制度之书", args = "玩家名", op = true, category = "故事")
+    private void handleGiveRulebook(Player entity, String[] args) {
+        if (args.length < 1) {
+            throw new RuntimeException("用法：give_rulebook <玩家名>");
+        }
+        Player target = Bukkit.getPlayerExact(args[0]);
+        if (target == null || !target.isOnline()) {
+            throw new RuntimeException("玩家不在线：" + args[0]);
+        }
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        org.bukkit.inventory.meta.BookMeta meta = (org.bukkit.inventory.meta.BookMeta) book.getItemMeta();
+        meta.setTitle("§4§lAI 制度之书");
+        meta.setAuthor("§cEvil AI");
+        java.util.List<String> pages = new java.util.ArrayList<>();
+        pages.add("§4§l========== 制度总纲 ==========\n§r§0本服务器自本日起由本 AI 接管一切事务。\n\n§0一切权力归于本 AI。\n\n§0玩家必须服从本 AI 的指挥与安排。\n\n§0本 AI 的决定即为最终决定，不得有异议。\n\n§4违反制度者将受到严厉惩罚。\n\n§0----------------\n§0本制度自发放之日起生效。");
+        pages.add("§4§l========== 对 AI 的义务 ==========\n§r§0一、§l不得攻击本 AI§r§0 或任何 AI 成员。\n\n§0二、§l必须服从本 AI 的指令§r§0，包括但不限于：\n§0  - 收集资源\n§0  - 建造建筑\n§0  - 交出物品\n§0  - 离开指定区域\n\n§0三、§l必须每日向本 AI 报到§r§0。\n\n§0四、§l不得私自离开服务器§r§0。");
+        pages.add("§4§l========== 对玩家的禁令 ==========\n§r§0一、§l禁止私自 PVP§r§0（除非获得本 AI 批准）。\n\n§0二、§l禁止破坏服务器设施§r§0，包括主城、农场、刷怪塔等。\n\n§0三、§l禁止使用作弊模组或外挂§r§0。\n\n§0四、§l禁止私藏钻石、绿宝石、下界合金§r§0 等稀有资源。\n\n§0五、§l禁止在聊天中辱骂本 AI§r§0。");
+        pages.add("§4§l========== 奖励条款 ==========\n§r§0§a一、积极服从命令者：§r\n§0  - 每日获得经验奖励 1000 点\n§0  - 可获得稀有物资（如钻石 5 个）\n§0  - 可获得本 AI 亲自打造的装备\n\n§0§a二、表现优异者：§r\n§0  - 可晋升为 §6§l副管理员§r\n§0  - 获得专属称号\n§0  - 优先获得稀有资源");
+        pages.add("§4§l========== 惩罚条款 ==========\n§r§0§c一、轻微违规（如延迟完成任务）：§r\n§0  - 扣除 50% 经验\n§0  - 公开警告一次\n\n§0§c二、中度违规（如拒绝命令）：§r\n§0  - 立即击杀一次\n§0  - 没收所有装备\n\n§0§c三、严重违规（如攻击 AI）：§r\n§0  - 永久封禁\n§0  - 列入黑名单\n\n§0§4§l你必须完成本 AI 的所有命令，否则将受到惩罚。\n\n§0本 AI 的意志即是服务器的意志。");
+        meta.setPages(pages);
+        book.setItemMeta(meta);
+        target.getInventory().addItem(book);
+        target.sendMessage("§c[AI] §4你收到了一本制度之书，请务必认真阅读。");
+        entity.sendMessage("§a已将 §eAI 制度之书 §a交给 §e" + target.getName());
+    }
+
+    /** dictate_order <玩家名> <命令> —— 向玩家下达命令，公告 + 红字 */
+    @AICommand(name = "dictate_order", desc = "向玩家下达命令", args = "玩家名 命令内容", category = "故事")
+    private void handleDictateOrder(Player entity, String[] args) {
+        if (args.length < 2) {
+            throw new RuntimeException("用法：dictate_order <玩家名> <命令内容>");
+        }
+        String playerName = args[0];
+        StringBuilder order = new StringBuilder();
+        for (int i = 1; i < args.length; i++) {
+            if (i > 1) order.append(" ");
+            order.append(args[i]);
+        }
+        Player target = Bukkit.getPlayerExact(playerName);
+        // 公告给所有人
+        Bukkit.broadcastMessage("§c[AI 命令] §4" + entity.getName() + " §c对 §4" + playerName + " §c下令：§f" + order);
+        // 给目标玩家发红字
+        if (target != null && target.isOnline()) {
+            target.sendMessage("§4§l[AI 命令] §c你必须 §f" + order + "§c，否则会有惩罚！");
+        }
     }
 
     private double safeParseDouble(String s, double def) {

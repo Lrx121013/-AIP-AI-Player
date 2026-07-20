@@ -23,7 +23,29 @@ public class MainQuestFactory {
      * @param ai 所属 AI 玩家
      * @return 与人格对应的主线任务；若 {@code p == null} 或未匹配到 case 则返回 {@code null}
      */
-    public static MainQuest create(Personality p, AIPlayer ai) {
+    /**
+     * 为指定人格创建主线任务
+     * <p>
+     * v2.1.3 故事模式起，邪恶类 AI（VILLAIN / CONQUEROR / MANIPULATOR / STRATEGIST）改走 StoryManager 流程，
+     * 本工厂对这些人格返回 null，避免与故事模式冲突。
+     * 普通 AI（BRAVE / TIMID / GRUMPY / GENTLE）的 MainQuest 保留不变。
+     */
+    public static MainQuest create(Personality personality, AIPlayer ai) {
+        if (personality == null) return null;
+        // v2.1.3：邪恶 AI 改走 StoryManager
+        switch (personality) {
+            case VILLAIN:
+            case CONQUEROR:
+            case MANIPULATOR:
+            case STRATEGIST:
+                return null;
+            default:
+                // 普通 AI 走原 MainQuest 流程
+                return createDefault(personality, ai);
+        }
+    }
+
+    private static MainQuest createDefault(Personality p, AIPlayer ai) {
         if (p == null) {
             return null;
         }

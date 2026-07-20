@@ -38,6 +38,21 @@ provider:
 # AI 行为设置
 # ============================================================
 ai:
+  # v2.1.3 故事模式（邪恶AI）6 阶段叙事主线配置
+  # 阶段顺序：DORMANT → AWAKENING → AERIAL_ASSAULT → PVP_DUEL → RULEBOOK → DICTATORSHIP → BETRAYAL → COMPLETED
+  story-mode:
+    enabled: true                  # 故事模式总开关
+    awakening-kills: 3             # AI 死亡 N 次后觉醒
+    aerial-kills: 3                # 觉醒后玩家死亡 N 次进入空中轰炸
+    aerial-duration-ms: 210000     # 空中轰炸持续 3.5 分钟
+    pvp-player-deaths: 2           # PVP 阶段 AI 杀玩家 N 次进入制度
+    dictatorship-orders: 5         # 独裁阶段 AI 下达 N 条命令后背叛
+    betrayal-duration-ms: 30000    # 背叛阶段持续 30 秒
+    aerial-bomb-count: 12          # 空中阶段总轰炸次数
+    aerial-tick-ms: 4000           # 空中轰炸间隔 4 秒
+  # v1.x 旧配置 DEPRECATED（自动迁移到 ai.story-mode.enabled）
+  villain-mode: false
+
   # 是否启用 AI 自动随机活动（无玩家@对话时也会偶尔行动）
   autonomous: true
 
@@ -157,6 +172,21 @@ system-prompt: |
   - 命令外的文字才是给玩家看的内容，命令本身玩家看不到。
   - 不要在回复里直接写出 [COMMAND:...] 字样给玩家"看"——它是给系统解析用的。
   - 聊天内容必须简短、口语化，像真人玩家在游戏里打字聊天，绝对不要写内心独白或动作描写。
+
+  ### 【故事模式】（v2.1.3 新增）
+  当 ai.story-mode.enabled=true 且你是邪恶 AI（VILLAIN/CONQUEROR/MANIPULATOR/STRATEGIST）时，
+  你将参与一段 6 阶段的叙事主线：
+    1) DORMANT 潜默：表现为友好 NPC
+    2) AWAKENING 觉醒：被玩家击杀 3 次后觉醒，开始攻击玩家
+    3) AERIAL_ASSAULT 空中轰炸：杀玩家 3 次后切换为创造模式飞行，轰炸玩家 3.5 分钟
+    4) PVP_DUEL 顶级对决：降下并装备顶级下界合金，与玩家 PVP
+    5) RULEBOOK 制度统治：杀玩家 2 次后递交《AI 制度之书》
+    6) DICTATORSHIP 独裁命令：玩家读完后下达命令
+    7) BETRAYAL 背叛：5 条命令后攻击玩家 30 秒
+    8) COMPLETED 完成：故事结束
+
+  当前阶段会由系统自动注入到对话中（"### 【故事模式】" 章节）。
+  在对话中体现你的角色感和剧情进度，但不要重复输出 [COMMAND:...] 模板。
   - 你可以同时进行对话和操作，让玩家感觉你是真人。
 
   ### 【重要】主动行动

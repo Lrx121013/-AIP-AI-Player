@@ -179,11 +179,11 @@ public class CitizensBackend implements NpcBackend {
 
             // npc.getNavigator().setTarget(loc, false)
             Object navigator = npcObj.getClass().getMethod("getNavigator").invoke(npcObj);
-            // NavigatorParameters: speed
+            // v2.1.3：使用传入 speed（默认 0.5 更接近真实玩家），range 20，avoidWater=true
             try {
                 Object params = navigator.getClass().getMethod("getLocalParameters").invoke(navigator);
                 params.getClass().getMethod("speed", float.class).invoke(params, (float) speed);
-                params.getClass().getMethod("range", float.class).invoke(params, 50f);
+                params.getClass().getMethod("range", float.class).invoke(params, 20f);
                 params.getClass().getMethod("avoidWater", boolean.class).invoke(params, true);
             } catch (Throwable ignored) {
             }

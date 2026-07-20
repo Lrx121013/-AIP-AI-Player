@@ -104,8 +104,26 @@ public class ConfigManager {
 
     /**
      * 是否启用反派模式（实时读取配置，支持 /aip villain 动态切换）
+     * @deprecated v2.1.3 起替换为 {@link #isStoryMode()}
      */
+    @Deprecated
     public boolean isVillainMode() {
+        // v2.1.3 优先读 story-mode，回退到 villain-mode
+        if (plugin.getConfig().contains("ai.story-mode")) {
+            return plugin.getConfig().getBoolean("ai.story-mode.enabled", false);
+        }
+        return plugin.getConfig().getBoolean("ai.villain-mode", false);
+    }
+
+    /**
+     * v2.1.3：是否启用故事模式（邪恶AI 6 阶段叙事）
+     * <p>
+     * 优先读 ai.story-mode.enabled，回退到 ai.villain-mode
+     */
+    public boolean isStoryMode() {
+        if (plugin.getConfig().contains("ai.story-mode")) {
+            return plugin.getConfig().getBoolean("ai.story-mode.enabled", false);
+        }
         return plugin.getConfig().getBoolean("ai.villain-mode", false);
     }
 
@@ -192,5 +210,47 @@ public class ConfigManager {
     /** spawn 后多久生成开场白（ticks），实时读取配置 */
     public int getIntroDelayTicks() {
         return plugin.getConfig().getInt("ai.main-quest.intro-delay-ticks", 20);
+    }
+
+    // ===== v2.1.3 故事模式（邪恶AI）配置 =====
+
+    /** AI 死亡多少次后觉醒，默认 3 */
+    public int getAwakeningKills() {
+        return plugin.getConfig().getInt("ai.story-mode.awakening-kills", 3);
+    }
+
+    /** 觉醒后 AI 杀玩家多少次进入空中轰炸，默认 3 */
+    public int getAerialKills() {
+        return plugin.getConfig().getInt("ai.story-mode.aerial-kills", 3);
+    }
+
+    /** 空中轰炸持续时长（毫秒），默认 210000（3.5 分钟） */
+    public long getAerialDurationMs() {
+        return plugin.getConfig().getLong("ai.story-mode.aerial-duration-ms", 210000L);
+    }
+
+    /** PVP 阶段 AI 杀玩家多少次进入制度，默认 2 */
+    public int getPvpPlayerDeaths() {
+        return plugin.getConfig().getInt("ai.story-mode.pvp-player-deaths", 2);
+    }
+
+    /** 独裁阶段 AI 下达多少条命令后进入背叛，默认 5 */
+    public int getDictatorshipOrders() {
+        return plugin.getConfig().getInt("ai.story-mode.dictatorship-orders", 5);
+    }
+
+    /** 背叛阶段持续时长（毫秒），默认 30000（30 秒） */
+    public long getBetrayalDurationMs() {
+        return plugin.getConfig().getLong("ai.story-mode.betrayal-duration-ms", 30000L);
+    }
+
+    /** 空中阶段总轰炸次数，默认 12 */
+    public int getAerialBombCount() {
+        return plugin.getConfig().getInt("ai.story-mode.aerial-bomb-count", 12);
+    }
+
+    /** 空中轰炸间隔（毫秒），默认 4000（4 秒） */
+    public long getAerialTickMs() {
+        return plugin.getConfig().getLong("ai.story-mode.aerial-tick-ms", 4000L);
     }
 }

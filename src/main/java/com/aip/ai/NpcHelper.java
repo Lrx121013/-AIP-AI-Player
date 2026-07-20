@@ -8,10 +8,12 @@ import com.google.gson.JsonParser;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -104,6 +106,24 @@ public class NpcHelper {
     /** 让 NPC 朝向某个位置（仅转头） */
     public static void faceLocation(Player npc, Location target) {
         backend().faceLocation(npc, target);
+    }
+
+    /**
+     * v2.1.3：让 NPC 跳跃（设置 velocity）
+     * <p>
+     * Citizens 后端用反射调用 NPC 的 setVelocity，NMS 直接 setVelocity。
+     * 用于"追随玩家时跳跃到下一格"的物理行为修复。
+     *
+     * @return 是否成功
+     */
+    public static boolean setAiVelocity(Player npc, Vector velocity) {
+        if (npc == null || velocity == null) return false;
+        try {
+            npc.setVelocity(velocity);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ===== 皮肤获取 =====

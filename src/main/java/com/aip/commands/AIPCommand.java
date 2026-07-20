@@ -69,6 +69,8 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             case "team" -> handleTeam(sender, args);
             case "task" -> handleTask(sender, args);
             case "relation" -> handleRelation(sender, args);
+            // v2.1.3 故事模式查询
+            case "story" -> handleStory(sender, args);
             case "revive" -> handleRevive(sender, args);
             case "schedule" -> handleSchedule(sender, args);
             case "mood" -> handleMood(sender, args);
@@ -472,6 +474,79 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
         }
         ai.setPersonality(p);
         sender.sendMessage("§a已将 " + args[2] + " 的个性设置为 §e" + p.name() + "§a：" + p.getPrompt());
+    }
+
+    // ===== v2.1.3 故事模式查询 =====
+    private void handleStory(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("§c用法:");
+            sender.sendMessage("§e/aip story show <AI名> §7- 查看 AI 故事状态");
+            sender.sendMessage("§e/aip story skip <AI名> <阶段> §7- 强制切阶段（OP only）");
+            return;
+        }
+        String action = args[1].toLowerCase();
+        switch (action) {
+            case "show" -> {
+                if (args.length < 3) {
+                    sender.sendMessage("§c用法: /aip story show <AI名>");
+                    return;
+                }
+                AIPlayer ai = plugin.getAiPlayerManager().get(args[2]);
+                if (ai == null) {
+                    sender.sendMessage("§c未找到 AI 玩家: " + args[2]);
+                    return;
+                }
+                com.aip.story.StoryState state = ai.getStoryState();
+                if (state == null) {
+                    sender.sendMessage("§7" + ai.getName() + " 不在故事模式中（可能未启用 ai.story-mode 或非邪恶 AI）");
+                    return;
+                }
+                sender.sendMessage("§6===== " + ai.getName() + " 的故事状态 =====");
+                sender.sendMessage("§e" + state.getSummary());
+                sender.sendMessage("§7阶段描述: §f" + state.getCurrentPhase().getDescription());
+                if (state.getCurrentPhase() == com.aip.story.StoryPhase.AERIAL_ASSAULT) {
+                    sender.sendMessage("§7剩余轰炸: §f" + state.getAerialBombsRemaining() + " 次");
+                }
+                if (state.getCurrentPhase() == com.aip.story.StoryPhase.DICTATORSHIP) {
+                    sender.sendMessage("§7已下命令: §f" + state.getDictatorshipOrdersGiven()
+                            + " / " + plugin.getConfigManager().getDictatorshipOrders());
+                }
+            }
+            case "skip" -> {
+                if (!sender.hasPermission("aip.admin") && !sender.isOp()) {
+                    sender.sendMessage("§c你没有权限执行此操作。");
+                    return;
+                }
+                if (args.length < 4) {
+                    sender.sendMessage("§c用法: /aip story skip <AI名> <阶段>");
+                    sender.sendMessage("§7可选阶段: DORMANT, AWAKENING, AERIAL_ASSAULT, PVP_DUEL, RULEBOOK, DICTATORSHIP, BETRAYAL, COMPLETED");
+                    return;
+                }
+                AIPlayer ai = plugin.getAiPlayerManager().get(args[2]);
+                if (ai == null) {
+                    sender.sendMessage("§c未找到 AI 玩家: " + args[2]);
+                    return;
+                }
+                com.aip.story.StoryState state = ai.getStoryState();
+                if (state == null) {
+                    sender.sendMessage("§7" + ai.getName() + " 不在故事模式中");
+                    return;
+                }
+                com.aip.story.StoryPhase target;
+                try {
+                    target = com.aip.story.StoryPhase.valueOf(args[3].toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    sender.sendMessage("§c未知阶段: " + args[3]);
+                    return;
+                }
+                if (state.transitionTo(target)) {
+                    sender.sendMessage("§a已将 " + ai.getName() + " 切到阶段 §e" + target.getDisplayName());
+                } else {
+                    sender.sendMessage("§c阶段转移失败（非法转移：当前 " + state.getCurrentPhase() + " → " + target + "）");
+                }
+            }
+            default -> sender.sendMessage("§c未知 story 子命令: " + action);
+        }
     }
 
     // ===== 功能 4: AI 队伍系统 =====
@@ -1206,7 +1281,7 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             result = Arrays.asList("spawn", "remove", "list", "reload", "talk", "reset", "skin",
                     "history", "personality", "team", "task", "relation", "revive",
                     "schedule", "mood", "deathlog", "villain", "goal", "profile", "memory",
-                    "approve", "reject", "reflex", "quest");
+                    "approve", "reject", "reflex", "quest", "story");
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase();
             if (sub.equals("remove") || sub.equals("talk") || sub.equals("reset") || sub.equals("skin")
@@ -1232,6 +1307,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             } else if (sub.equals("quest")) {
                 // /aip quest show <ai>
                 result = Arrays.asList("show");
+            } else if (sub.equals("story")) {
+                // v2.1.3: /aip story show/skip
+                result = Arrays.asList("show", "skip");
             }
         } else if (args.length == 3) {
             String sub = args[0].toLowerCase();
@@ -1271,6 +1349,9 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
             } else if (sub.equals("quest") && action.equals("show")) {
                 // /aip quest show <ai>
                 result = aiNames;
+            } else if (sub.equals("story") && (action.equals("show") || action.equals("skip"))) {
+                // v2.1.3: /aip story show/skip <ai>
+                result = aiNames;
             }
         } else if (args.length == 4) {
             String sub = args[0].toLowerCase();
@@ -1296,6 +1377,10 @@ public class AIPCommand implements CommandExecutor, TabCompleter {
                     result = ai.getGoalManager().getAllGoals().stream()
                             .map(Goal::getId).collect(Collectors.toList());
                 }
+            } else if (sub.equals("story") && action.equals("skip")) {
+                // v2.1.3: /aip story skip <ai> <phase>
+                result = Arrays.asList("DORMANT", "AWAKENING", "AERIAL_ASSAULT", "PVP_DUEL",
+                        "RULEBOOK", "DICTATORSHIP", "BETRAYAL", "COMPLETED");
             }
         } else if (args.length == 5) {
             String sub = args[0].toLowerCase();
