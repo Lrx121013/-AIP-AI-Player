@@ -3,9 +3,17 @@ package com.aip.story;
 import java.util.UUID;
 
 /**
- * v2.2.7 火柴盒 AI 故事状态
+ * v2.2.9 火柴盒故事状态（探索逃跑版）
  * <p>
  * 每个 StoryState 绑定一个玩家 UUID，故事进度独立。
+ * <p>
+ * 关键字段：
+ *   - sawSecondPaint    章节 5 玩家是否看了 Mr. Sparkle 第二张画
+ *   - gotCrystalKey     章节 5 玩家是否拿到水晶钥匙
+ *   - flowerUndisposed  章节 5 之后玩家背包里是否还有 "永远不会凋谢的花"（true=玩家没看警告 → 触发隐藏坏结局 3）
+ *   - trustMrSparkle    玩家是否信 Mr. Sparkle
+ *   - chapterStartTime  当前章节开始时间
+ *   - storyStartTime    整个故事的开始时间
  */
 public class StoryState {
 
@@ -15,14 +23,16 @@ public class StoryState {
     private long storyStartTime;
     private boolean storyStarted;
     private boolean storyCompleted;
-    /** Eve 的花是否仍在玩家背包里（true=玩家没听 Mr. Sparkle 警告），用于触发隐藏坏结局 3 */
+    /** 章节 5 玩家是否看了 Mr. Sparkle 第二张画 */
+    private boolean sawSecondPaint;
+    /** 章节 5 玩家是否拿到水晶钥匙 */
+    private boolean gotCrystalKey;
+    /** 章节 5 之后玩家背包里是否还有 "永远不会凋谢的花"（true=没看警告 → 隐藏坏结局 3） */
     private boolean flowerUndisposed;
-    /** 玩家原始 OP 状态备份（章节 6 会被 AI 夺取 OP） */
-    private boolean playerOriginalOpStatus;
-    /** 玩家是否在章节 9 点了 [投降]（决定走 10A） */
-    private boolean choseSurrender;
-    /** 隐藏坏结局 3 是否已触发（章节 5→6 时检测） */
-    private boolean hiddenEndingPending;
+    /** 玩家是否信 Mr. Sparkle */
+    private boolean trustMrSparkle;
+    /** 章节 9 玩家点击的选择：null=未选，"10A"=回家，"10B"=继续跑 */
+    private String chosenEnding;
 
     public StoryState(UUID playerId) {
         this.playerId = playerId;
@@ -31,10 +41,11 @@ public class StoryState {
         this.storyStartTime = 0L;
         this.storyStarted = false;
         this.storyCompleted = false;
+        this.sawSecondPaint = false;
+        this.gotCrystalKey = false;
         this.flowerUndisposed = true;   // 默认玩家背包里有花（没警告）
-        this.playerOriginalOpStatus = false;
-        this.choseSurrender = false;
-        this.hiddenEndingPending = false;
+        this.trustMrSparkle = false;
+        this.chosenEnding = null;
     }
 
     public UUID getPlayerId() { return playerId; }
@@ -60,21 +71,25 @@ public class StoryState {
 
     public void setStoryCompleted(boolean b) { this.storyCompleted = b; }
 
+    public boolean isSawSecondPaint() { return sawSecondPaint; }
+
+    public void setSawSecondPaint(boolean b) { this.sawSecondPaint = b; }
+
+    public boolean isGotCrystalKey() { return gotCrystalKey; }
+
+    public void setGotCrystalKey(boolean b) { this.gotCrystalKey = b; }
+
     public boolean isFlowerUndisposed() { return flowerUndisposed; }
 
     public void setFlowerUndisposed(boolean b) { this.flowerUndisposed = b; }
 
-    public boolean isPlayerOriginalOpStatus() { return playerOriginalOpStatus; }
+    public boolean isTrustMrSparkle() { return trustMrSparkle; }
 
-    public void setPlayerOriginalOpStatus(boolean b) { this.playerOriginalOpStatus = b; }
+    public void setTrustMrSparkle(boolean b) { this.trustMrSparkle = b; }
 
-    public boolean isChoseSurrender() { return choseSurrender; }
+    public String getChosenEnding() { return chosenEnding; }
 
-    public void setChoseSurrender(boolean b) { this.choseSurrender = b; }
-
-    public boolean isHiddenEndingPending() { return hiddenEndingPending; }
-
-    public void setHiddenEndingPending(boolean b) { this.hiddenEndingPending = b; }
+    public void setChosenEnding(String s) { this.chosenEnding = s; }
 
     /** 当前章节已过时长（秒） */
     public int getElapsedSeconds() {
@@ -95,60 +110,35 @@ public class StoryState {
         return Math.max(0, remain);
     }
 
-    /** 重置故事（用于新玩家） */
+    /** 重置故事（用于新玩家或退出后重玩） */
     public void reset() {
         this.currentPhase = StoryPhase.CHAPTER_1_MATCH_HOUSE;
         this.chapterStartTime = 0L;
         this.storyStartTime = 0L;
         this.storyStarted = false;
         this.storyCompleted = false;
+        this.sawSecondPaint = false;
+        this.gotCrystalKey = false;
         this.flowerUndisposed = true;
-        this.playerOriginalOpStatus = false;
-        this.choseSurrender = false;
-        this.hiddenEndingPending = false;
+        this.trustMrSparkle = false;
+        this.chosenEnding = null;
     }
 
-    // ============================================================
-    // v2.2.7 兼容：旧版故事模式字段/方法（已废弃，新故事不再使用）
-    // ============================================================
-
-    /** v2.2.7 兼容：旧版 AI 死亡计数（返回 0，新故事不依赖） */
-    public int getAiDeathCount() { return 0; }
-    public void setAiDeathCount(int n) { /* no-op */ }
-    public void incrementAiDeathCount() { /* no-op */ }
-
-    /** v2.2.7 兼容：旧版制度之书 */
-    public boolean isRulebookDelivered() { return false; }
-    public void setRulebookDelivered(boolean b) { /* no-op */ }
-    public boolean isRulebookRead() { return false; }
-    public void setRulebookRead(boolean b) { /* no-op */ }
-
-    /** v2.2.7 兼容：旧版空中轰炸计数 */
-    public int getAerialBombsRemaining() { return 0; }
-    public void setAerialBombsRemaining(int n) { /* no-op */ }
-
-    /** v2.2.7 兼容：旧版独裁命令计数 */
-    public int getDictatorshipOrdersGiven() { return 0; }
-    public void setDictatorshipOrdersGiven(int n) { /* no-op */ }
-
-    /** v2.2.7 兼容：旧版阶段转移（已废弃） */
-    public boolean transitionTo(StoryPhase target) { return false; }
-
-    /** v2.2.7 兼容：状态摘要 */
+    /** 状态摘要（用于 /aistory status） */
     public String getSummary() {
         return getCurrentPhase().getDisplayName();
     }
 
-    /** v2.2.7 兼容：旧版觉醒 deferred 字段 */
+    // ============================================================
+    // 兼容旧 API（AIPlayerManager 仍调用，新故事不依赖）
+    // ============================================================
+
+    /** 兼容：旧版觉醒 pending 字段（始终 false） */
     public boolean isAwakeningPending() { return false; }
     public void setAwakeningPending(boolean b) { /* no-op */ }
     public String getPendingKillerName() { return null; }
     public void setPendingKillerName(String s) { /* no-op */ }
 
-    /** v2.2.7 兼容：旧版复活重绑 */
+    /** 兼容：旧版复活重绑（无操作） */
     public void reviveRebind(java.util.UUID newOwnerId) { /* no-op */ }
-
-    /** v2.2.7 兼容：旧版 chosenEnding */
-    public String getChosenEnding() { return null; }
-    public void setChosenEnding(String s) { /* no-op */ }
 }

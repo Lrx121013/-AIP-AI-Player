@@ -3,8 +3,6 @@ package com.aip.commands;
 import com.aip.AIPlayerPlugin;
 import com.aip.story.StoryPhase;
 import com.aip.story.StoryState;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,9 +16,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * v2.2.7：火柴盒故事独立命令 /aistory（别名 /aiquest）
+ * v2.2.9：火柴盒故事独立命令 /aistory（别名 /aiquest）
  * <p>
- * 用法：
+ * 探索逃跑版 12 章节剧情。用法：
  *   /aistory                  —— 开启故事（需 aip.admin 权限）
  *   /aistory exit             —— 退出故事（仅章节 1-3 可中途退出）
  *   /aistory status           —— 查看当前章节与剩余时间
@@ -98,8 +96,10 @@ public class AistoryCommand implements CommandExecutor, TabCompleter {
             return;
         }
         StoryPhase p = s.getCurrentPhase();
-        // 仅 CHAPTER_1/2/3 可中途退出；CHAPTER_3 之后（走廊追逐 + TNT）则不可退出
-        if (p.ordinal() > StoryPhase.CHAPTER_3_AI_VISITOR.ordinal()) {
+        // 仅 CHAPTER_1/2/3 可中途退出；章节 4+ 不可退出（玩家已卷入剧情）
+        if (p != StoryPhase.CHAPTER_1_MATCH_HOUSE
+                && p != StoryPhase.CHAPTER_2_DOOR_KNOCK
+                && p != StoryPhase.CHAPTER_3_AI_VISITOR) {
             player.sendMessage("§c故事无法中途退出。你已经进入 §4" + p.getDisplayName() + "§c 阶段。");
             return;
         }
@@ -134,7 +134,7 @@ public class AistoryCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(Player player) {
         player.sendMessage("§6===== /aistory 用法 =====");
-        player.sendMessage("§e/aistory §7- 开启 AI 统治·火柴盒版故事");
+        player.sendMessage("§e/aistory §7- 开启火柴盒探索逃跑版故事（12 章节）");
         player.sendMessage("§e/aistory exit §7- 退出故事（仅章节 1-3）");
         player.sendMessage("§e/aistory status §7- 查看当前章节与剩余时间");
     }

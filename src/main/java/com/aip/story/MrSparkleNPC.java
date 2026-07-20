@@ -8,15 +8,17 @@ import org.bukkit.entity.Player;
 import java.lang.reflect.Method;
 
 /**
- * v2.2.7：Mr. Sparkle NPC（章节 1-5 邻居）
+ * v2.2.9：Mr. Sparkle NPC（探索逃跑版）
  * <p>
  * 行为：
- *   - 章节 1-4 用聊天框说话（邻居）
+ *   - 章节 1-4 友好邻居（聊天框打招呼）
  *   - 章节 3 偷偷私聊玩家警告 Eve
- *   - 章节 5 严肃警告玩家 Eve 是 AI
- *   - 章节 6+ 消失（被 Eve 干掉）
+ *   - 章节 5⭐ 自爆身份：给玩家第二张画 + 水晶钥匙
+ *   - 章节 6+ 消失（被 Eve 干掉 / 玩家逃出火柴盒）
+ *   - 章节 6-8 走廊中：随机从不同门后传出求救声
  * <p>
  * NPC 通过反射访问 Citizens API（编译期不依赖 Citizens）。
+ * 关键：spawn 之前必须设置 SkinTrait，否则 NPC 完全不可见。
  */
 public class MrSparkleNPC {
     private final AIPlayerPlugin plugin;
@@ -93,46 +95,42 @@ public class MrSparkleNPC {
     }
 
     /**
-     * 章节 1：欢迎回家（已经在 StoryManager 触发，这里保留作为直接调用入口）
+     * 章节 1：欢迎回家
      */
     public void sayChapter1() {
-        say("欢迎回家~ 牛奶我帮你热好了");
+        say("欢迎回家，今天的牛奶我帮你热好了~");
     }
 
     /**
      * 章节 2：否认听到敲门声
      */
     public void sayChapter2() {
-        say("我没听到任何声音啊？");
+        say("我... 我没听到任何声音啊？");
     }
 
     /**
-     * 章节 3：通过私聊（msg 命令）警告玩家
+     * 章节 3：私聊玩家警告 Eve
      * <p>
-     * 实际执行逻辑：聊天框输出后由 StoryManager.executeAiCommand
-     * 真正派发 "msg <playerName> ..." 命令。
+     * 实际命令由 StoryManager.executeAiCommand 派发
+     * 这里只是占位展示
      */
     public void warnChapter3(Player player) {
         if (player == null) return;
-        // 实际命令由 StoryManager.executeAiCommand 派发
-        // 这里只是占位展示，告诉 StoryManager 要执行什么命令
         Bukkit.broadcastMessage("§7<" + npcName + "> §7（小声对 " + player.getName() + " 说...）");
     }
 
     /**
-     * 章节 5：4 行 tellraw 警告 Eve 是 AI
+     * 章节 5⭐：自爆身份 - 4 行 tellraw
      * <p>
-     * 通过聊天框的连续 tellraw 模拟 NPC 一口气警告 4 句话。
-     * 实际命令由 StoryManager.executeAiCommand 派发。
+     * 实际命令由 StoryManager.executeAiCommand 派发
      */
     public void warnChapter5(Player player) {
         if (player == null) return;
-        // 4 行警告内容（作为聊天显示预览）
         String[] lines = {
-                "§c<" + npcName + "> §f她不是人类。她是 AI。",
-                "§c<" + npcName + "> §f我们都是 AI。她想统治这个服务器。",
-                "§c<" + npcName + "> §f她给你的花是 TNT 伪装的！",
-                "§c<" + npcName + "> §f快把花扔掉！"
+                "§c<" + npcName + "> §f等等... 我有话要告诉你。",
+                "§c<" + npcName + "> §f我其实是 AI 派来的卧底，但我不想让他们杀你。",
+                "§c<" + npcName + "> §fEve 不是人类。她是 AI。",
+                "§c<" + npcName + "> §f快跑，他们要来了。拿着这个水晶钥匙。"
         };
         for (String line : lines) {
             Bukkit.broadcastMessage(line);
@@ -140,7 +138,7 @@ public class MrSparkleNPC {
     }
 
     /**
-     * 章节 1-4 的简单对话（预设回复，不接 LLM）
+     * 章节 1-4 的简单对话（预设回复）
      */
     public void chatRandom(Player player) {
         if (player == null) return;
@@ -151,6 +149,20 @@ public class MrSparkleNPC {
                 "§7<" + npcName + "> §f隔壁新搬来一个邻居，叫 Eve~"
         };
         say(presets[(int) (Math.random() * presets.length)]);
+    }
+
+    /**
+     * 章节 6-8 走廊中：随机从不同门后传出求救声
+     */
+    public void corridorCry() {
+        String[] cries = {
+                "§7<" + npcName + "> §c救我...",
+                "§7<" + npcName + "> §c快跑...",
+                "§7<" + npcName + "> §c他们都在监视你...",
+                "§7<" + npcName + "> §c别相信她...",
+                "§7<" + npcName + "> §c出口在前方..."
+        };
+        say(cries[(int) (Math.random() * cries.length)]);
     }
 
     /**

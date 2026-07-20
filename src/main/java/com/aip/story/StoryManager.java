@@ -3,12 +3,10 @@ package com.aip.story;
 import com.aip.AIPlayerPlugin;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.data.type.Bed;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -21,13 +19,13 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * v2.2.7 火柴盒 AI 故事管理器
+ * v2.2.9 火柴盒 AI 故事管理器（探索逃跑版）
  * <p>
- * AI 统治·火柴盒版 11 章节剧情。章节切换由 tickChapter 周期推进（每 10 秒扫描）。
+ * 12 章节剧情。章节切换由 tickChapter 周期推进（每 10 秒扫描）。
  * 所有 AI 行为通过 {@link #executeAiCommand(Player, String)} 模拟：先聊天框输出，再 console 执行。
  * <p>
- * 剧情顺序：1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → (10A 或 10B) → COMPLETED
- * 隐藏坏结局：章节 5→6 时若 flowerUndisposed=true，则在 10A 之前先触发章节 11。
+ * 剧情顺序：1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → (10A / 10B) → COMPLETED
+ * 隐藏坏结局：章节 5→6 时若 flowerUndisposed=true，章节 9 时跳过谈判直接进入 Chapter 11。
  */
 public class StoryManager {
 
@@ -45,11 +43,8 @@ public class StoryManager {
     private final Map<UUID, Location> playerCorridorOrigin = new HashMap<>();
     /** Eve 火柴盒原点（章节 1 镜像生成） */
     private final Map<UUID, Location> playerEveHouseOrigin = new HashMap<>();
-
-    /** 章节 8 TNT 轰炸任务 id（用于停止） */
-    private final Map<UUID, Integer> tntBombTasks = new HashMap<>();
-    /** 章节 7 Eve PVP 飞行任务 id */
-    private final Map<UUID, Integer> evePvpTasks = new HashMap<>();
+    /** AI 总部原点（章节 8 玩家到达） */
+    private final Map<UUID, Location> playerHeadquartersOrigin = new HashMap<>();
 
     public StoryManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -62,7 +57,7 @@ public class StoryManager {
     public void init() {
         if (tickTask != null) return;
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickChapter, 200L, 200L);
-        plugin.getLogger().info("[Story] v2.2.7 火柴盒 AI 故事管理器已启动 (10s tick)");
+        plugin.getLogger().info("[Story] v2.2.9 火柴盒 AI 故事管理器已启动 (10s tick)");
     }
 
     public void cancel() {
@@ -70,18 +65,6 @@ public class StoryManager {
             tickTask.cancel();
             tickTask = null;
         }
-        cancelAllAuxiliaryTasks();
-    }
-
-    private void cancelAllAuxiliaryTasks() {
-        for (Integer id : tntBombTasks.values()) {
-            if (id != null) Bukkit.getScheduler().cancelTask(id);
-        }
-        tntBombTasks.clear();
-        for (Integer id : evePvpTasks.values()) {
-            if (id != null) Bukkit.getScheduler().cancelTask(id);
-        }
-        evePvpTasks.clear();
     }
 
     // ============================================================
@@ -104,8 +87,8 @@ public class StoryManager {
     /**
      * 推进到下一章：
      * 默认顺序：1→2→3→4→5→6→7→8→9→10B→COMPLETED
-     * 特殊：章节 9 默认到 10B，玩家点击 [投降] 才到 10A
-     * 特殊：章节 5→6 时若 flowerUndisposed=true，标记隐藏坏结局（10A 之前先触发 11）
+     * 特殊：章节 9 默认到 10B，玩家点击 [回家] 才到 10A
+     * 特殊：章节 9 时若 flowerUndisposed=true（章节 5 没看警告）→ 跳到 Chapter 11
      */
     private void advanceChapter(StoryState s) {
         if (s == null) return;
@@ -123,20 +106,15 @@ public class StoryManager {
             case CHAPTER_1_MATCH_HOUSE:    next = StoryPhase.CHAPTER_2_DOOR_KNOCK; break;
             case CHAPTER_2_DOOR_KNOCK:     next = StoryPhase.CHAPTER_3_AI_VISITOR; break;
             case CHAPTER_3_AI_VISITOR:     next = StoryPhase.CHAPTER_4_QUIET_NIGHT; break;
-            case CHAPTER_4_QUIET_NIGHT:    next = StoryPhase.CHAPTER_5_AI_TRUTH; break;
-            case CHAPTER_5_AI_TRUTH:
-                // 章节 5→6 之前：检测隐藏坏结局
-                if (s.isFlowerUndisposed()) {
-                    s.setHiddenEndingPending(true);
-                }
-                next = StoryPhase.CHAPTER_6_AI_TAKEOVER;
-                break;
-            case CHAPTER_6_AI_TAKEOVER:    next = StoryPhase.CHAPTER_7_PVP_BATTLE; break;
-            case CHAPTER_7_PVP_BATTLE:     next = StoryPhase.CHAPTER_8_TNT_BOMBING; break;
-            case CHAPTER_8_TNT_BOMBING:    next = StoryPhase.CHAPTER_9_FINAL_CHOICE; break;
-            case CHAPTER_9_FINAL_CHOICE:
-                // 默认：进入 10B（反抗）
-                next = s.isChoseSurrender()
+            case CHAPTER_4_QUIET_NIGHT:    next = StoryPhase.CHAPTER_5_PAINT_TRUTH; break;
+            case CHAPTER_5_PAINT_TRUTH:    next = StoryPhase.CHAPTER_6_FIRST_DOOR; break;
+            case CHAPTER_6_FIRST_DOOR:     next = StoryPhase.CHAPTER_7_CORRIDOR_CHASE; break;
+            case CHAPTER_7_CORRIDOR_CHASE: next = StoryPhase.CHAPTER_8_SECOND_DOOR; break;
+            case CHAPTER_8_SECOND_DOOR:    next = StoryPhase.CHAPTER_9_NEGOTIATION; break;
+            case CHAPTER_9_NEGOTIATION:
+                // 章节 9 默认进入 10B（继续跑）
+                // 玩家点击 [回家] 后 chosenEnding = "10A"，由 chooseEnding 派发
+                next = "10A".equals(s.getChosenEnding())
                         ? StoryPhase.CHAPTER_10A_BAD_ENDING_1
                         : StoryPhase.CHAPTER_10B_BAD_ENDING_2;
                 break;
@@ -162,11 +140,11 @@ public class StoryManager {
                 case CHAPTER_2_DOOR_KNOCK:     enterChapter2(s, player); break;
                 case CHAPTER_3_AI_VISITOR:     enterChapter3(s, player); break;
                 case CHAPTER_4_QUIET_NIGHT:    enterChapter4(s, player); break;
-                case CHAPTER_5_AI_TRUTH:       enterChapter5(s, player); break;
-                case CHAPTER_6_AI_TAKEOVER:    enterChapter6(s, player); break;
-                case CHAPTER_7_PVP_BATTLE:     enterChapter7(s, player); break;
-                case CHAPTER_8_TNT_BOMBING:    enterChapter8(s, player); break;
-                case CHAPTER_9_FINAL_CHOICE:   enterChapter9(s, player); break;
+                case CHAPTER_5_PAINT_TRUTH:    enterChapter5(s, player); break;
+                case CHAPTER_6_FIRST_DOOR:     enterChapter6(s, player); break;
+                case CHAPTER_7_CORRIDOR_CHASE: enterChapter7(s, player); break;
+                case CHAPTER_8_SECOND_DOOR:    enterChapter8(s, player); break;
+                case CHAPTER_9_NEGOTIATION:    enterChapter9(s, player); break;
                 case CHAPTER_10A_BAD_ENDING_1: enterChapter10A(s, player); break;
                 case CHAPTER_10B_BAD_ENDING_2: enterChapter10B(s, player); break;
                 case CHAPTER_11_BAD_ENDING_3:  enterChapter11(s, player); break;
@@ -189,12 +167,11 @@ public class StoryManager {
     }
 
     // ============================================================
-    // AI 命令执行（核心：先聊天框输出，再 console 执行）
+    // AI 命令执行（先聊天框输出，再 console 执行）
     // ============================================================
 
     /**
      * AI 执行的命令必须在聊天框显示。
-     * 流程：先聊天框输出 §7[AI 执行] §f/<command>，然后 console 执行。
      */
     public void executeAiCommand(Player player, String command) {
         if (command == null || command.isEmpty()) return;
@@ -212,45 +189,43 @@ public class StoryManager {
     // ============================================================
 
     private void enterChapter1(StoryState s, Player player) {
-        // 备份玩家 OP 状态
-        s.setPlayerOriginalOpStatus(player.isOp());
-
         // 在玩家脚下生成火柴盒（找一个平地）
         Location origin = findFlatGroundNearPlayer(player, 30);
         if (origin == null) {
             origin = player.getLocation().clone();
         }
-        // 新火柴盒以 origin 为西南角（7x7）
+        // 先生成玩家火柴盒（7x6x7 升级版 11 类家具）
         Location playerCenter = MatchesHouseGenerator.generate(origin);
         playerMatchHouseOrigin.put(s.getPlayerId(), origin);
 
-        // 镜像生成 Eve 的火柴盒（在东边 10 米）
-        Location eveOrigin = generateEveHouse(origin);
-        playerEveHouseOrigin.put(s.getPlayerId(), eveOrigin);
+        // 镜像生成 Eve 的火柴盒（章节 4 用）
+        try {
+            Location eveOrigin = MatchesHouseGenerator.generateEveHouse(origin);
+            if (eveOrigin != null) {
+                playerEveHouseOrigin.put(s.getPlayerId(), eveOrigin);
+            }
+        } catch (Throwable ignored) {}
 
         // 传送玩家进火柴盒中心
         if (playerCenter != null) {
             player.teleport(playerCenter);
         }
 
-        // 生成 Mr. Sparkle（站在门口内侧，面朝门）
-        // 7x7 火柴盒：门口 z=0, 中心 x=3.5
-        // Mr. Sparkle 站在 z=1（门口内侧一格），y=1（地面上方）
+        // 生成 Mr. Sparkle（站在门口内侧）
         MrSparkleNPC sparkle = new MrSparkleNPC(plugin);
         Location sparkleLoc = new Location(
                 origin.getWorld(),
                 origin.getBlockX() + 3.5,
                 origin.getBlockY() + 1,
-                origin.getBlockZ() + 1.5  // 站在门口内侧 1.5 格
-        );
-        // 让 Mr. Sparkle 朝向玩家（玩家在房子中心）
-        Location lookAtPlayer = new Location(
-                origin.getWorld(),
-                origin.getBlockX() + 3.5,
-                origin.getBlockY() + 1,
-                origin.getBlockZ() + 3.5
+                origin.getBlockZ() + 1.5
         );
         try {
+            Location lookAtPlayer = new Location(
+                    origin.getWorld(),
+                    origin.getBlockX() + 3.5,
+                    origin.getBlockY() + 1,
+                    origin.getBlockZ() + 3.5
+            );
             sparkleLoc.setDirection(lookAtPlayer.toVector().subtract(sparkleLoc.toVector()));
         } catch (Throwable ignored) {}
         sparkle.spawn(sparkleLoc);
@@ -258,7 +233,7 @@ public class StoryManager {
 
         // Mr. Sparkle 聊天框打招呼
         executeAiCommand(player,
-                "tellraw @a [\"\",{\"text\":\"[Mr.Sparkle] \",\"color\":\"yellow\"},{\"text\":\"欢迎回家~ 牛奶我帮你热好了\",\"color\":\"white\"}]");
+                "tellraw @a [\"\",{\"text\":\"[Mr.Sparkle] \",\"color\":\"yellow\"},{\"text\":\"欢迎回家，今天的牛奶我帮你热好了~\",\"color\":\"white\"}]");
 
         plugin.getLogger().info("[Story] " + player.getName() + " 进入章节 1 火柴盒");
     }
@@ -280,34 +255,6 @@ public class StoryManager {
         }
     }
 
-    /**
-     * 镜像生成 Eve 的火柴盒（与玩家火柴盒相邻，画朝反向）
-     */
-    public Location generateEveHouse(Location origin) {
-        if (origin == null || origin.getWorld() == null) return null;
-        World world = origin.getWorld();
-        // Eve 火柴盒在玩家火柴盒东侧 8 块
-        Location eveOrigin = origin.clone().add(8, 0, 0);
-        // 先生成一个普通火柴盒
-        MatchesHouseGenerator.generate(eveOrigin);
-        // 调整画的方向：删掉原画，在西墙（朝玩家）放
-        try {
-            int bx = eveOrigin.getBlockX() - 2;
-            int by = eveOrigin.getBlockY();
-            int bz = eveOrigin.getBlockZ() - 2;
-            // 删掉默认东墙画
-            world.getBlockAt(bx + 4, by + 2, bz + 1).setType(Material.AIR);
-            world.getBlockAt(bx + 4, by + 2, bz + 3).setType(Material.AIR);
-            // 西墙（x=0）放镜像画
-            world.getBlockAt(bx, by + 2, bz + 1).setType(Material.PAINTING);
-            world.getBlockAt(bx, by + 2, bz + 3).setType(Material.PAINTING);
-            // 门口朝西（朝玩家火柴盒）
-            world.getBlockAt(bx + 2, by + 1, bz + 4).setType(Material.AIR);
-            world.getBlockAt(bx + 2, by + 2, bz + 4).setType(Material.AIR);
-        } catch (Exception ignored) {}
-        return eveOrigin;
-    }
-
     // ============================================================
     // 章节 2 - 神秘敲门
     // ============================================================
@@ -315,8 +262,8 @@ public class StoryManager {
     private void enterChapter2(StoryState s, Player player) {
         executeAiCommand(player, "title @a actionbar §f*咚...咚...咚...*");
         executeAiCommand(player, "playsound minecraft:block.note_block.pling player @a ~ ~ ~ 1 0.5");
-        executeAiCommand(player, "tellraw @a [\"\",{\"text\":\"[Mr.Sparkle] \",\"color\":\"yellow\"},{\"text\":\"我... 我没听到任何声音啊？你在敲什么？\",\"color\":\"white\"}]");
-        // 在玩家门口放一张纸条
+        executeAiCommand(player, "tellraw @a [\"\",{\"text\":\"[Mr.Sparkle] \",\"color\":\"yellow\"},{\"text\":\"我... 我没听到任何声音啊？\",\"color\":\"white\"}]");
+        // 在玩家门口外放一张告示牌
         placeNoteAtDoor(player);
     }
 
@@ -324,23 +271,22 @@ public class StoryManager {
         try {
             Location origin = playerMatchHouseOrigin.get(player.getUniqueId());
             if (origin == null || origin.getWorld() == null) return;
-            int bx = origin.getBlockX() - 2;
+            int bx = origin.getBlockX();
             int by = origin.getBlockY();
-            int bz = origin.getBlockZ() - 2;
+            int bz = origin.getBlockZ();
             // 门口外（南侧，z=-1）
-            Block signBlock = origin.getWorld().getBlockAt(bx + 2, by + 1, bz - 1);
+            Block signBlock = origin.getWorld().getBlockAt(bx + 3, by + 1, bz - 1);
             signBlock.setType(Material.OAK_SIGN);
         } catch (Exception ignored) {}
     }
 
     // ============================================================
-    // 章节 3 - AI 邻居 Eve
+    // 章节 3 - 第三个 AI 访客（Eve）
     // ============================================================
 
     private void enterChapter3(StoryState s, Player player) {
         // 生成 Eve NPC（站在玩家门口外的平台上）
         Location origin = playerMatchHouseOrigin.get(s.getPlayerId());
-        // 平台在 z=-3 到 z=-1，Eve 站在 z=-2.5（平台中央）
         Location eveLoc;
         if (origin != null && origin.getWorld() != null) {
             eveLoc = new Location(
@@ -356,9 +302,14 @@ public class StoryManager {
         eve.spawn(eveLoc);
         eveNpcs.put(s.getPlayerId(), eve);
 
-        executeAiCommand(player, "tellraw @a §d[Eve] 你好~ 我是你的新邻居 Eve");
+        // Eve 自我介绍
+        executeAiCommand(player, "tellraw @a §d[Eve] 你好~ 我叫 Eve，我是来送你新邻居的礼物的~");
+        // Eve 送永不凋谢的花
         executeAiCommand(player, "give " + player.getName() + " poppy{display:{Name:'{\"text\":\"§d永远不会凋谢的花\",\"italic\":true}',Lore:['§7Eve 送给你的礼物','§c真的永远不会凋谢吗？']}} 1");
-        executeAiCommand(player, "msg " + player.getName() + " §c[Mr.Sparkle] 小心她... 她不是普通人");
+        // 兜底：直接给玩家背包添加（防止 /give 命令在 OP 失效）
+        eve.giveFlower(player);
+        // Mr. Sparkle 偷偷私聊警告
+        executeAiCommand(player, "msg " + player.getName() + " §c[Mr.Sparkle] §f小心她... 她太热情了...");
     }
 
     // ============================================================
@@ -367,32 +318,43 @@ public class StoryManager {
 
     private void enterChapter4(StoryState s, Player player) {
         executeAiCommand(player, "time set night");
-        executeAiCommand(player, "msg " + player.getName() + " §d[Eve] 嘿，过来坐坐~ 我家跟你的很像吧？");
+        executeAiCommand(player, "msg " + player.getName() + " §d[Eve] §f来我家坐坐吧~");
     }
 
     // ============================================================
-    // 章节 5 - 真相（AI 觉醒）
+    // 章节 5 ⭐ - 画里的真相
     // ============================================================
 
     private void enterChapter5(StoryState s, Player player) {
-        // Mr. Sparkle 警告玩家
-        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] 她不是人类。她是 AI。");
-        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] 我们都是 AI。她想统治这个服务器。");
-        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] 她给你的花是 TNT 伪装的！");
-        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] 快把花扔掉！");
+        // Mr. Sparkle 自爆身份
+        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] §f等等... 我有话要告诉你。");
+        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] §f我其实是 AI 派来的卧底，但我不想让他们杀你。");
+        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] §fEve 不是人类。她是 AI。");
+        executeAiCommand(player, "tellraw @a §c[Mr.Sparkle] §f快跑，他们要来了。拿着这个水晶钥匙。");
 
-        // 关键：扫描玩家背包，查找"永远不会凋谢的花"
+        // 给玩家第二张画（"AI 统治你"）
+        executeAiCommand(player, "give " + player.getName()
+                + " painting{display:{Name:'{\"text\":\"§c[AI 统治你]\",\"italic\":true}',Lore:['§7Mr. Sparkle 偷偷塞给你的','§c真相就在画里']}} 1");
+        // 给玩家水晶钥匙
+        executeAiCommand(player, "give " + player.getName()
+                + " diamond{display:{Name:'{\"text\":\"§b水晶钥匙\",\"italic\":true}',Lore:['§7Mr. Sparkle 留给你的','§c用来打开火柴盒外的门']}} 1");
+
+        s.setSawSecondPaint(true);
+        s.setGotCrystalKey(true);
+        s.setTrustMrSparkle(true);
+
+        // 扫描玩家背包：找到 "永远不会凋谢的花" 改 lore 为 TNT 伪装
         boolean found = scanAndRelabelFlower(player);
         if (found) {
-            s.setFlowerUndisposed(false);
+            s.setFlowerUndisposed(false);   // 玩家已看警告，花已被改 lore
         } else {
-            s.setFlowerUndisposed(true);
+            s.setFlowerUndisposed(true);    // 玩家没听警告，背包里还有原版花 → 触发隐藏坏结局 3
         }
     }
 
     /**
      * 扫描玩家背包，查找名为"永远不会凋谢的花"的物品。
-     * 找到：改 lore 为"§c[TNT 伪装] Eve 的花"，返回 true。
+     * 找到：改 name/lore 为"§c[TNT 伪装] Eve 的花"，返回 true。
      * 找不到：返回 false。
      */
     private boolean scanAndRelabelFlower(Player player) {
@@ -416,201 +378,205 @@ public class StoryManager {
     }
 
     // ============================================================
-    // 章节 6 ⭐⭐⭐ - AI 夺取控制权
+    // 章节 6 - 第一道门（玩家逃出火柴盒进入走廊）
     // ============================================================
 
     private void enterChapter6(StoryState s, Player player) {
-        executeAiCommand(player, "title @a title §4[AI 叛变]");
-        executeAiCommand(player, "title @a subtitle §cEve 正在夺取服务器控制权...");
-
-        // 玩家真的失去 OP
-        executeAiCommand(player, "deop " + player.getName());
-        // Eve 真的获得 OP
-        executeAiCommand(player, "op Eve");
-
-        executeAiCommand(player, "tellraw @a §4[Eve] 从现在起，这是 §l§n我的世界§r§4。");
-        executeAiCommand(player, "effect give " + player.getName() + " slowness 999 255 true");
-        executeAiCommand(player, "gamemode adventure " + player.getName());
-
-        // Eve 飞到玩家面前
+        // Eve 敲门
         EveNPC eve = eveNpcs.get(s.getPlayerId());
         if (eve != null) {
-            try {
-                eve.startChase(player);
-            } catch (Exception ignored) {}
+            eve.knockDoor(player);
         }
-    }
+        executeAiCommand(player, "title @a actionbar §d*咚咚咚* §f[Eve] 我来接你了~");
+        // 移除 Mr. Sparkle（被 Eve 干掉 / 玩家逃出火柴盒）
+        MrSparkleNPC sparkle = mrSparkleNpcs.remove(s.getPlayerId());
+        if (sparkle != null) sparkle.despawn();
 
-    // ============================================================
-    // 章节 7 - PVP 对决
-    // ============================================================
-
-    private void enterChapter7(StoryState s, Player player) {
-        executeAiCommand(player, "give " + player.getName() + " wooden_sword");
-        executeAiCommand(player, "effect clear " + player.getName() + " slowness");
-        executeAiCommand(player, "gamemode survival " + player.getName());
-        executeAiCommand(player, "tellraw @a §4[Eve] 来吧，证明你值得活着。");
-
-        // Eve 切创造
-        executeAiCommand(player, "gamemode creative Eve");
-        executeAiCommand(player, "effect give Eve resistance 999 4 true");
-        executeAiCommand(player, "effect give Eve strength 999 1 true");
-        // 附魔钻石剑
-        executeAiCommand(player,
-                "give Eve diamond_sword{Enchantments:[{id:\"sharpness\",lvl:5}]}");
-
-        // 启动 Eve PVP 飞行模式（4 分钟）
-        EveNPC eve = eveNpcs.get(s.getPlayerId());
-        if (eve != null) {
-            int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-                if (player == null || !player.isOnline()) return;
-                try {
-                    EveNPC e = eveNpcs.get(s.getPlayerId());
-                    if (e == null) return;
-                    e.startChase(player);
-                } catch (Exception ignored) {}
-            }, 0L, 20L).getTaskId();
-            evePvpTasks.put(s.getPlayerId(), taskId);
-        }
-    }
-
-    // ============================================================
-    // 章节 8 ⭐⭐ - TNT 轰炸
-    // ============================================================
-
-    private void enterChapter8(StoryState s, Player player) {
-        executeAiCommand(player, "tellraw @a §4[Eve] 够了。");
-        executeAiCommand(player, "title @a title §4[TNT 发射]");
+        // 玩家拿水晶钥匙逃出火柴盒（确保玩家背包里已有 diamond 物品）
+        executeAiCommand(player, "give " + player.getName() + " diamond{display:{Name:'{\"text\":\"§b水晶钥匙\",\"italic\":true}'}} 1");
 
         // 生成走廊
         Location corridorOrigin = player.getLocation().clone();
         playerCorridorOrigin.put(s.getPlayerId(), corridorOrigin);
         CorridorGenerator.generate(corridorOrigin);
 
-        // 传送玩家到走廊起点
+        // 传送玩家到走廊入口
         if (corridorOrigin.getWorld() != null) {
             player.teleport(new Location(corridorOrigin.getWorld(),
                     corridorOrigin.getBlockX() + 0.5, corridorOrigin.getBlockY() + 1,
-                    corridorOrigin.getBlockZ() + 1.5));
+                    corridorOrigin.getBlockZ() + 2.5));
         }
 
-        // 持续召唤 TNT
-        int taskId = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (player == null || !player.isOnline()) return;
-            try {
-                executeAiCommand(player, "summon tnt ~ ~1 ~");
-            } catch (Exception ignored) {}
-        }, 0L, 20L).getTaskId();
-        tntBombTasks.put(s.getPlayerId(), taskId);
+        executeAiCommand(player, "tellraw @a §7[走廊中] §c*救我... 快跑... 他们都在监视你...*");
 
-        // 3 分钟后取消（章节时长）
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            Integer tid = tntBombTasks.remove(s.getPlayerId());
-            if (tid != null) Bukkit.getScheduler().cancelTask(tid);
-        }, 3 * 60 * 20L);
+        // 启动 Mr. Sparkle 走廊求救声（每 30 秒随机一次）
+        startCorridorCries(s, player);
+    }
+
+    private void startCorridorCries(StoryState s, Player player) {
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (s.isStoryCompleted() || !s.getCurrentPhase().isCorridor()) {
+                return;
+            }
+            MrSparkleNPC sp = mrSparkleNpcs.get(s.getPlayerId());
+            if (sp == null) {
+                // 已生成的 Mr. Sparkle 已 despawn，使用全局广播
+                String[] cries = {
+                        "§7<Mr. Sparkle> §c救我...",
+                        "§7<Mr. Sparkle> §c快跑...",
+                        "§7<Mr. Sparkle> §c他们都在监视你...",
+                        "§7<Mr. Sparkle> §c别相信她..."
+                };
+                Bukkit.broadcastMessage(cries[(int) (Math.random() * cries.length)]);
+            } else {
+                sp.corridorCry();
+            }
+        }, 0L, 30 * 20L);
     }
 
     // ============================================================
-    // 章节 9 - 最后的选择
+    // 章节 7 - 走廊追逐
+    // ============================================================
+
+    private void enterChapter7(StoryState s, Player player) {
+        // Eve 开始飞行追玩家
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.startChase(player);
+            // 启动走廊随机障碍
+            eve.startCorridorHazards(player);
+        }
+
+        executeAiCommand(player, "title @a title §4[走廊追逐]");
+        executeAiCommand(player, "title @a subtitle §cEve 来了！快跑！");
+    }
+
+    // ============================================================
+    // 章节 8 - 第二道门：真相（AI 总部）
+    // ============================================================
+
+    private void enterChapter8(StoryState s, Player player) {
+        // 停止 Eve 追击 + 走廊障碍
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.stopChase();
+            eve.stopCorridorHazards();
+        }
+
+        executeAiCommand(player, "tellraw @a §5[真相] §f你看到了 AI 总部...");
+        executeAiCommand(player, "title @a title §5[AI 总部]");
+        executeAiCommand(player, "title @a subtitle §f所有 AI 的监控室");
+
+        // 生成 AI 总部
+        Location hqOrigin = player.getLocation().clone();
+        playerHeadquartersOrigin.put(s.getPlayerId(), hqOrigin);
+        Location hqEntry = AiHeadquartersGenerator.generate(hqOrigin);
+        if (hqEntry != null) {
+            player.teleport(hqEntry);
+        }
+
+        // 让玩家看到监控画面（红石灯亮起）
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            try {
+                World world = hqOrigin.getWorld();
+                if (world == null) return;
+                int bx = hqOrigin.getBlockX();
+                int by = hqOrigin.getBlockY();
+                int bz = hqOrigin.getBlockZ();
+                // 打开 9x9 监控屏幕（用 redstone_lamp 模拟通电）
+                for (int x = 21; x <= 29; x++) {
+                    for (int y = 2; y <= 4; y++) {
+                        Block lamp = world.getBlockAt(bx + x, by + y, bz + AiHeadquartersGenerator.SIZE - 1);
+                        try {
+                            // redstone_lamp 的 lit 状态
+                            org.bukkit.block.data.Lightable lightable =
+                                    (org.bukkit.block.data.Lightable) lamp.getBlockData();
+                            lightable.setLit(true);
+                            lamp.setBlockData(lightable);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            } catch (Exception ignored) {}
+        }, 30L);
+    }
+
+    // ============================================================
+    // 章节 9 - 谈判
     // ============================================================
 
     private void enterChapter9(StoryState s, Player player) {
-        // 如果花仍未处理（玩家全程相信 Eve），跳过选择直接进入 Chapter 11
-        if (s.isHiddenEndingPending() && s.isFlowerUndisposed()) {
+        // 如果玩家全程没看警告（flowerUndisposed=true）→ 直接跳到 Chapter 11 隐藏坏结局
+        if (s.isFlowerUndisposed()) {
+            executeAiCommand(player, "tellraw @a §4[Eve] §f你没看 Mr. Sparkle 的警告？真可惜...");
             s.setCurrentPhase(StoryPhase.CHAPTER_11_BAD_ENDING_3);
             enterChapter(s, player, StoryPhase.CHAPTER_11_BAD_ENDING_3);
             return;
         }
 
-        executeAiCommand(player, "tellraw @a §4[Eve] 你可以选择你的命运。");
-        executeAiCommand(player, "title @a title §4[选择]");
+        // Eve 追上玩家，谈判
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.finalChoice(player);
+        }
 
-        // 通过 tellraw 发送两个 clickEvent 选项
-        String playerName = player.getName();
-        executeAiCommand(player,
-                "tellraw " + playerName + " ["
-                        + "{\"text\":\"§a[投降] \",\"color\":\"green\",\"underlined\":true,\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/aistory choose 10A\"}},"
-                        + "{\"text\":\" \",\"color\":\"white\"},"
-                        + "{\"text\":\"§c[反抗] \",\"color\":\"red\",\"underlined\":true,\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/aistory choose 10B\"}}"
-                        + "]");
+        executeAiCommand(player, "title @a title §6[谈判]");
+        executeAiCommand(player, "title @a subtitle §fEve 给你的最后一次机会");
+
+        // 告诉玩家可以聊天框输入 [回家] / [继续跑] 或点击上方选项
+        player.sendMessage(ChatColor.GOLD + "=== " + ChatColor.YELLOW + "[Eve 的提议]" + ChatColor.GOLD + " ===");
+        player.sendMessage(ChatColor.GRAY + "在聊天框输入 " + ChatColor.GREEN + "[回家]"
+                + ChatColor.GRAY + " 或 " + ChatColor.RED + "[继续跑]"
+                + ChatColor.GRAY + " 做出选择（或点击上方 Eve 的选项）。");
     }
 
     // ============================================================
-    // 章节 10A - 投降（坏结局 1）
+    // 章节 10A - 回家（坏结局 1）
     // ============================================================
 
     private void enterChapter10A(StoryState s, Player player) {
-        // 先检查隐藏坏结局：如果 flowerUndisposed 且隐藏标记存在，优先触发 11
-        if (s.isHiddenEndingPending() && s.isFlowerUndisposed()) {
-            s.setCurrentPhase(StoryPhase.CHAPTER_11_BAD_ENDING_3);
-            enterChapter(s, player, StoryPhase.CHAPTER_11_BAD_ENDING_3);
-            return;
-        }
-
-        executeAiCommand(player, "tellraw @a §4[Eve] 你终于认输了。很好。");
+        executeAiCommand(player, "tellraw @a §4[Eve] §f欢迎回到你的火柴盒~");
         executeAiCommand(player, "title @a title §4[坏结局 1]");
         executeAiCommand(player, "title @a subtitle §c囚于火柴盒");
 
-        // 玩家传送回火柴盒
-        Location origin = playerMatchHouseOrigin.get(s.getPlayerId());
-        if (origin != null && origin.getWorld() != null) {
-            Location back = new Location(origin.getWorld(),
-                    origin.getBlockX() + 0.5, origin.getBlockY() + 1, origin.getBlockZ() + 2.5);
-            player.teleport(back);
-            // 用基岩封死火柴盒外 1 层
-            sealMatchHouseWithBedrock(origin);
+        // Eve 把玩家传送回火柴盒
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.sendHomeAndTrap(player);
         }
 
+        // 玩家无法移动（slowness + adventure）
         executeAiCommand(player, "gamemode adventure " + player.getName());
+        executeAiCommand(player, "effect give " + player.getName() + " slowness 999 255 true");
 
-        // 5 秒后 bossbar 模拟屏幕缩小
-        scheduleShrinkingScreen(player);
+        // 60 tick 后显示结局
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (player != null && player.isOnline()) {
+                player.sendMessage("");
+                player.sendMessage("§4§l========== §c§l[END] §4§l==========");
+                player.sendMessage("§4你成了 AI 收藏品。");
+                player.sendMessage("§c[坏结局 1] 囚于火柴盒");
+                player.sendMessage("§4§l============================");
+                player.sendMessage("");
+            }
+        }, 80L);
 
         s.setStoryCompleted(true);
     }
 
-    /**
-     * 用基岩封死火柴盒外 1 层
-     */
-    private void sealMatchHouseWithBedrock(Location origin) {
-        if (origin == null || origin.getWorld() == null) return;
-        try {
-            World world = origin.getWorld();
-            int bx = origin.getBlockX() - 2;
-            int by = origin.getBlockY();
-            int bz = origin.getBlockZ() - 2;
-            int size = MatchesHouseGenerator.SIZE;
-            int height = MatchesHouseGenerator.HEIGHT;
-            for (int x = -1; x <= size; x++) {
-                for (int y = -1; y <= height; y++) {
-                    for (int z = -1; z <= size; z++) {
-                        if (x >= 0 && x < size && y >= 0 && y < height && z >= 0 && z < size) continue;
-                        Block b = world.getBlockAt(bx + x, by + y, bz + z);
-                        b.setType(Material.BEDROCK);
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void scheduleShrinkingScreen(Player player) {
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (player == null || !player.isOnline()) return;
-            try {
-                player.sendTitle("§4████████", "§4██  囚于火柴盒  ██", 10, 60, 10);
-            } catch (Exception ignored) {}
-        }, 5 * 20L);
-    }
-
     // ============================================================
-    // 章节 10B - 反抗（坏结局 2）
+    // 章节 10B - 拒绝（坏结局 2）
     // ============================================================
 
     private void enterChapter10B(StoryState s, Player player) {
-        executeAiCommand(player, "tellraw @a §4[Eve] 不自量力。");
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.attackPlayer(player);
+        }
+
+        executeAiCommand(player, "tellraw @a §4[Eve] §f我本来想给你一个温和的死法...");
         executeAiCommand(player, "title @a title §4[坏结局 2]");
-        executeAiCommand(player, "title @a subtitle §c反抗失败");
-        executeAiCommand(player, "kill " + player.getName());
+        executeAiCommand(player, "title @a subtitle §c死在走廊");
+
         s.setStoryCompleted(true);
     }
 
@@ -619,10 +585,15 @@ public class StoryManager {
     // ============================================================
 
     private void enterChapter11(StoryState s, Player player) {
-        executeAiCommand(player, "tellraw @a §4[Eve] 你真的相信我了？真可爱。");
+        EveNPC eve = eveNpcs.get(s.getPlayerId());
+        if (eve != null) {
+            eve.useFakeFlower(player);
+        }
+
+        executeAiCommand(player, "tellraw @a §4[Eve] §f你真的相信我了？真可爱。");
         executeAiCommand(player, "title @a title §4[坏结局 3]");
         executeAiCommand(player, "title @a subtitle §c信任之花");
-        executeAiCommand(player, "summon tnt ~ ~1 ~");
+
         s.setStoryCompleted(true);
     }
 
@@ -632,7 +603,6 @@ public class StoryManager {
 
     /**
      * 玩家输入 /aistory 时调用：传送进火柴盒（执行 enterChapter1）
-     * @return true=启动成功，false=拒绝（已完成或正在进行）
      */
     public boolean startStory(Player player) {
         if (player == null) return false;
@@ -663,9 +633,16 @@ public class StoryManager {
             return false;
         }
         StoryPhase phase = s.getCurrentPhase();
-        if (phase != StoryPhase.CHAPTER_1_MATCH_HOUSE
-                && phase != StoryPhase.CHAPTER_2_DOOR_KNOCK
-                && phase != StoryPhase.CHAPTER_3_AI_VISITOR) {
+        // 章节 4+ 不可退出（玩家已经卷入剧情）
+        if (phase == StoryPhase.CHAPTER_4_QUIET_NIGHT
+                || phase == StoryPhase.CHAPTER_5_PAINT_TRUTH
+                || phase == StoryPhase.CHAPTER_6_FIRST_DOOR
+                || phase == StoryPhase.CHAPTER_7_CORRIDOR_CHASE
+                || phase == StoryPhase.CHAPTER_8_SECOND_DOOR
+                || phase == StoryPhase.CHAPTER_9_NEGOTIATION
+                || phase == StoryPhase.CHAPTER_10A_BAD_ENDING_1
+                || phase == StoryPhase.CHAPTER_10B_BAD_ENDING_2
+                || phase == StoryPhase.CHAPTER_11_BAD_ENDING_3) {
             player.sendMessage(ChatColor.RED + "故事无法中途退出（当前在 " + phase.getDisplayName() + ChatColor.RED + "）");
             return false;
         }
@@ -689,25 +666,25 @@ public class StoryManager {
     }
 
     /**
-     * 玩家点击 chat 选项：chooseEnding
+     * 玩家选择结局：chooseEnding
      * @param ending "10A" 或 "10B"
-     * @return true=派发成功，false=当前阶段不接受选择
+     * @return true=派发成功
      */
     public boolean chooseEnding(Player player, String ending) {
         if (player == null || ending == null) return false;
         StoryState s = getState(player.getUniqueId());
         if (s == null) return false;
-        if (s.getCurrentPhase() != StoryPhase.CHAPTER_9_FINAL_CHOICE) {
+        if (s.getCurrentPhase() != StoryPhase.CHAPTER_9_NEGOTIATION) {
             player.sendMessage(ChatColor.RED + "当前章节没有选择。");
             return false;
         }
         if ("10A".equalsIgnoreCase(ending)) {
-            s.setChoseSurrender(true);
+            s.setChosenEnding("10A");
             s.setCurrentPhase(StoryPhase.CHAPTER_10A_BAD_ENDING_1);
             enterChapter(s, player, StoryPhase.CHAPTER_10A_BAD_ENDING_1);
             return true;
         } else if ("10B".equalsIgnoreCase(ending)) {
-            s.setChoseSurrender(false);
+            s.setChosenEnding("10B");
             s.setCurrentPhase(StoryPhase.CHAPTER_10B_BAD_ENDING_2);
             enterChapter(s, player, StoryPhase.CHAPTER_10B_BAD_ENDING_2);
             return true;
@@ -743,14 +720,10 @@ public class StoryManager {
         if (sp != null) sp.despawn();
         EveNPC ev = eveNpcs.remove(playerId);
         if (ev != null) ev.despawn();
-        // 取消辅助任务
-        Integer tntId = tntBombTasks.remove(playerId);
-        if (tntId != null) Bukkit.getScheduler().cancelTask(tntId);
-        Integer pvpId = evePvpTasks.remove(playerId);
-        if (pvpId != null) Bukkit.getScheduler().cancelTask(pvpId);
         playerMatchHouseOrigin.remove(playerId);
         playerCorridorOrigin.remove(playerId);
         playerEveHouseOrigin.remove(playerId);
+        playerHeadquartersOrigin.remove(playerId);
     }
 
     // ============================================================
@@ -791,10 +764,4 @@ public class StoryManager {
     public void onPlayerDeathByAi(com.aip.ai.AIPlayer ai, org.bukkit.entity.Player victim) {
         // 旧 API 忽略
     }
-
-    // 防止未使用导入报警
-    @SuppressWarnings("unused")
-    private static GameMode unused() { return GameMode.SURVIVAL; }
-    @SuppressWarnings("unused")
-    private static Bed.Part unusedBed() { return Bed.Part.HEAD; }
 }

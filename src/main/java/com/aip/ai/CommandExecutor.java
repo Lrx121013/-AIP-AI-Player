@@ -741,14 +741,11 @@ public class CommandExecutor {
             double y = Double.parseDouble(args[1]);
             double z = Double.parseDouble(args[2]);
             Location target = new Location(entity.getWorld(), x, y, z);
-            // v2.2.2：觉醒/空中阶段改 flyTo（用 setVelocity 飞，不走 Citizens 寻路）
+            // v2.2.2：飞行模式阶段走 flyTo（用 setVelocity 飞，不走 Citizens 寻路）
+            // v2.2.9 故事已不再走 AWAKENING/AERIAL_ASSAULT 等 AI 阶段（玩家驱动的故事）
             StoryState state = aiPlayer.getStoryState();
             StoryPhase phase = state != null ? state.getCurrentPhase() : null;
-            if (phase == StoryPhase.AWAKENING
-                    || phase == StoryPhase.AERIAL_ASSAULT) {
-                plugin.getAiPlayerManager().flyTo(aiPlayer, target);
-                return;
-            }
+            // 保留：npcFlightMode 由 AIPlayerManager 控制（独立于故事阶段）
             walkTo(aiPlayer, target);
         } catch (NumberFormatException ignored) {
         }

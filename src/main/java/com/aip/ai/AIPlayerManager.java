@@ -540,12 +540,8 @@ public class AIPlayerManager {
             com.aip.story.StoryState state = plugin.getStoryManager() != null
                     ? plugin.getStoryManager().getState(id) : null;
             if (state != null) {
-                com.aip.story.StoryPhase phase = state.getCurrentPhase();
-                if (phase == com.aip.story.StoryPhase.AWAKENING
-                        || phase == com.aip.story.StoryPhase.AERIAL_ASSAULT
-                        || phase == com.aip.story.StoryPhase.PVP_DUEL) {
-                    return false;  // 飞行/决斗阶段让 CommandExecutor 走 flyTo
-                }
+                // v2.2.9 故事已不再走 AWAKENING/AERIAL_ASSAULT/PVP_DUEL 等 AI 阶段，
+                // 仅作为兼容性占位保留 state 引用，allow Citizens 自由寻路
             }
         } catch (Exception ignored) {}
 
@@ -607,12 +603,8 @@ public class AIPlayerManager {
             com.aip.story.StoryState state = plugin.getStoryManager() != null
                     ? plugin.getStoryManager().getState(id) : null;
             if (state != null) {
-                com.aip.story.StoryPhase phase = state.getCurrentPhase();
-                if (phase == com.aip.story.StoryPhase.AWAKENING
-                        || phase == com.aip.story.StoryPhase.AERIAL_ASSAULT
-                        || phase == com.aip.story.StoryPhase.PVP_DUEL) {
-                    return false;
-                }
+                // v2.2.9 故事已不再走 AWAKENING/AERIAL_ASSAULT/PVP_DUEL 等 AI 阶段，
+                // 仅作为兼容性占位保留 state 引用
             }
         } catch (Exception ignored) {}
 

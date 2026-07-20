@@ -41,7 +41,7 @@ commands:
       - aiplayer
       - ai
   aistory:
-    description: Start/Exit/Status the AI Overlord story
+    description: Start/Exit/Status the AI Match-house story (v2.2.9 12-chapter)
     usage: |
       /aistory - Start the story
       /aistory exit - Exit the story (only chapters 1-3)

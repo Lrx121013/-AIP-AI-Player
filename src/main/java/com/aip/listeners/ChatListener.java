@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * <p>
  * 功能：
  *   1. 检测 @AI名字 并触发 AI 对话
- *   2. v2.2.7：检测 [投降] / [反抗]（Chapter 9 Eve 的聊天框选择）
+ *   2. v2.2.9：检测 [回家] / [继续跑]（Chapter 9 Eve 的聊天框选择）
  *      - 玩家直接输入这两个关键词，调用 StoryManager.chooseEnding
  *      - 取消事件（避免污染公开聊天）
  *      - 仅在玩家有未完成的故事且当前在 Chapter 9 时响应
@@ -30,9 +30,9 @@ public class ChatListener implements Listener {
 
     // 匹配 @<名字> 开头（中文/英文/数字/下划线）
     private static final Pattern MENTION_PATTERN = Pattern.compile("^@([\\w\\u4e00-\\u9fa5]+)\\s+(.+)$");
-    // v2.2.7：Chapter 9 选择 —— 投降 / 反抗
-    private static final Pattern SURRENDER_PATTERN = Pattern.compile("^\\s*\\[投降\\]\\s*$");
-    private static final Pattern RESIST_PATTERN = Pattern.compile("^\\s*\\[反抗\\]\\s*$");
+    // v2.2.9：Chapter 9 选择 —— 回家 / 继续跑
+    private static final Pattern HOME_PATTERN = Pattern.compile("^\\s*\\[回家\\]\\s*$");
+    private static final Pattern RUN_PATTERN = Pattern.compile("^\\s*\\[继续跑\\]\\s*$");
 
     private final AIPlayerPlugin plugin;
 
@@ -45,7 +45,7 @@ public class ChatListener implements Listener {
         String msg = event.getMessage();
         Player sender = event.getPlayer();
 
-        // ===== v2.2.7: Chapter 9 聊天框选择 ([投降] / [反抗]) =====
+        // ===== v2.2.9: Chapter 9 聊天框选择 ([回家] / [继续跑]) =====
         if (handleChapter9Choice(sender, msg, event)) {
             return;
         }
@@ -121,15 +121,15 @@ public class ChatListener implements Listener {
     }
 
     /**
-     * v2.2.7：检测 Chapter 9 Eve 的 [投降]/[反抗] 聊天输入。
+     * v2.2.9：检测 Chapter 9 Eve 的 [回家]/[继续跑] 聊天输入。
      *
      * @return true 表示该消息已处理（无论是否成功触发选择）
      */
     private boolean handleChapter9Choice(Player player, String msg, AsyncPlayerChatEvent event) {
         if (player == null || msg == null) return false;
-        boolean surrender = SURRENDER_PATTERN.matcher(msg).matches();
-        boolean resist = RESIST_PATTERN.matcher(msg).matches();
-        if (!surrender && !resist) return false;
+        boolean home = HOME_PATTERN.matcher(msg).matches();
+        boolean run = RUN_PATTERN.matcher(msg).matches();
+        if (!home && !run) return false;
 
         // 取消聊天事件，避免在公共频道刷屏
         event.setCancelled(true);
@@ -147,10 +147,10 @@ public class ChatListener implements Listener {
         }
 
         // 派发结局选择
-        String ending = surrender ? "10A" : "10B";
+        String ending = home ? "10A" : "10B";
         boolean ok = plugin.getStoryManager().chooseEnding(player, ending);
         if (ok) {
-            player.sendMessage("§6[AI 故事] §e你选择了 §f[" + (surrender ? "投降" : "反抗") + "]§e。"
+            player.sendMessage("§6[AI 故事] §e你选择了 §f[" + (home ? "回家" : "继续跑") + "]§e。"
                     + " 派发到结局 §f" + ending + "§e，详见后续剧情。");
         } else {
             player.sendMessage("§c[AI 故事] 派发失败，请重试。");
