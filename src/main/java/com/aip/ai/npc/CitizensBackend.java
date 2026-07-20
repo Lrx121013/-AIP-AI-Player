@@ -61,6 +61,13 @@ public class CitizensBackend implements NpcBackend {
             // npc.spawn(loc)
             npc.getClass().getMethod("spawn", Location.class).invoke(npc, loc);
 
+            // 关键：关闭 Citizens 的 protected 模式（默认 true 会阻止玩家攻击 NPC）
+            // setProtected(false) 后，玩家攻击 NPC 才会造成伤害
+            try {
+                npc.getClass().getMethod("setProtected", boolean.class).invoke(npc, false);
+            } catch (Throwable ignored) {
+            }
+
             // npc.getEntity() 返回 Player
             Object entity = npc.getClass().getMethod("getEntity").invoke(npc);
             if (entity instanceof Player) {
