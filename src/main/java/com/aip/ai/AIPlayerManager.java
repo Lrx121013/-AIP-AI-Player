@@ -24,6 +24,8 @@ public class AIPlayerManager {
     private BukkitTask environmentTask;
     /** 每个 NPC 最近一次环境反应的时间戳（ms），避免对同一威胁反复触发 */
     private final Map<UUID, Long> lastEnvReact = new ConcurrentHashMap<>();
+    /** 每个 NPC 已打招呼的玩家名集合（避免对同一玩家反复打招呼） */
+    private final Map<UUID, java.util.Set<String>> greetedPlayers = new ConcurrentHashMap<>();
 
     public AIPlayerManager(AIPlayerPlugin plugin) {
         this.plugin = plugin;
@@ -302,7 +304,9 @@ public class AIPlayerManager {
                 promptBuilder.append(goalSummary).append("\n");
             }
             promptBuilder.append("（自主思考）当前游戏数据如下：\n").append(gameData)
-                    .append("\n基于你的目标、当前进度、最近观察到的事件，决定下一步战略动作（可以多个动作，不要限制数量）。要主动出击，不要被动等待。");
+                    .append("\n基于你的目标、当前进度、最近观察到的事件，决定下一步动作。"
+                            + "回复格式：先说一句简短的聊天话（像真人在游戏里打字，不要内心独白），再附带命令执行动作。"
+                            + "不要描述自己的计划，不要重复之前说过的话。");
             final String prompt = promptBuilder.toString();
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
@@ -372,6 +376,20 @@ public class AIPlayerManager {
             }
         }
 
+        // 清除已远离的玩家的打招呼记录（让下次再靠近可以再打招呼）
+        java.util.Set<String> greeted = greetedPlayers.get(uid);
+        if (greeted != null && !greeted.isEmpty()) {
+            double farRadius = plugin.getConfigManager().getEntityScanRadius();
+            java.util.Set<String> stillNear = ConcurrentHashMap.newKeySet();
+            for (org.bukkit.entity.Entity e : nearby) {
+                if (e instanceof Player p && !p.equals(v)) {
+                    stillNear.add(p.getName());
+                }
+            }
+            // 已打招呼但当前不在 nearby 列表里的玩家，清除标记
+            greeted.retainAll(stillNear);
+        }
+
         // 低血量也算紧急事件
         boolean lowHealth = v.getHealth() < 10.0;
 
@@ -382,13 +400,32 @@ public class AIPlayerManager {
             shouldReact = true;
             trigger.append("（紧急事件：附近的怪物 ").append(nearestMonster.getName())
                     .append(" 距离你仅 ").append(String.format("%.1f", nearestMonsterDist))
-                    .append(" 格，威胁很高！）\n");
+                    .append(" 格，威胁很高！请立刻攻击或逃跑。）\n");
         }
         if (nearestPlayer != null && nearestPlayerDist < 4.0) {
-            shouldReact = true;
-            trigger.append("（事件：玩家 ").append(nearestPlayer.getName())
-                    .append(" 走到了你身边，距离 ").append(String.format("%.1f", nearestPlayerDist))
-                    .append(" 格。你可以打招呼或攻击。）\n");
+            // 去重：只在该玩家首次靠近时打招呼，已在附近的玩家不重复触发
+            java.util.Set<String> greetedSet = greetedPlayers.computeIfAbsent(uid, k -> ConcurrentHashMap.newKeySet());
+            String playerName = nearestPlayer.getName();
+            if (nearestPlayerDist < 2.0) {
+                // 距离 < 2 格，标记为"已打招呼"，下次不再触发
+                if (!greetedSet.add(playerName)) {
+                    // 已打招呼，跳过
+                    nearestPlayer = null;
+                } else {
+                    shouldReact = true;
+                    trigger.append("（事件：玩家 ").append(playerName)
+                            .append(" 刚走到你身边，距离 ").append(String.format("%.1f", nearestPlayerDist))
+                            .append(" 格。你可以说一句话打招呼，比如'嘿'、'你好'、'干嘛呢'。简短口语化，不要描述事件。）\n");
+                }
+            } else {
+                // 距离 2-4 格，玩家可能正在离开，如果之前打过招呼则清除标记（让下次再靠近可以再打招呼）
+                if (!greetedSet.contains(playerName)) {
+                    shouldReact = true;
+                    trigger.append("（事件：玩家 ").append(playerName)
+                            .append(" 靠近了，距离 ").append(String.format("%.1f", nearestPlayerDist))
+                            .append(" 格。你可以说一句话反应，简短口语化。）\n");
+                }
+            }
         }
         if (lowHealth) {
             shouldReact = true;
@@ -407,7 +444,9 @@ public class AIPlayerManager {
             GameDataCollector collector = plugin.getGameDataCollector();
             String gameData = collector.collect(aiPlayer);
             final String prompt = trigger + "当前游戏数据：\n" + gameData
-                    + "\n请立刻做出反应。";
+                    + "\n请用聊天框说一句简短的话（像真人玩家在游戏里打字），可以附带命令执行动作。"
+                    + "禁止描述事件本身（如'玩家走到了我身边'），禁止内心独白（如'我决定...'）。"
+                    + "只说真人玩家会说的那种短句，如'嘿'、'我去'、'小心'、'干嘛呢'。";
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
                     ConversationManager cm = new ConversationManager(plugin, aiPlayer);
@@ -423,5 +462,13 @@ public class AIPlayerManager {
         } catch (Exception e) {
             plugin.getLogger().warning("环境反应采集数据失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 玩家离开后清除打招呼记录（让下次再靠近可以再打招呼）
+     */
+    public void clearGreeted(UUID aiUid, String playerName) {
+        java.util.Set<String> greeted = greetedPlayers.get(aiUid);
+        if (greeted != null) greeted.remove(playerName);
     }
 }
